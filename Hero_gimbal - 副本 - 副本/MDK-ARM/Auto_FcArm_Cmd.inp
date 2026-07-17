@@ -1,0 +1,13 @@
+..\user\core\Alg\ChassisCalculation\CalculationBase.hpp,
+..\user\core\Alg\ChassisCalculation\OmniCalculation.hpp,
+..\user\core\Alg\ChassisCalculation\StringWheel.hpp,
+..\user\core\BSP\Motor\MotorBase.hpp,
+..\user\core\BSP\Motor\Dji\DjiMotor.hpp,
+..\user\core\BSP\RemoteControl\DT7.hpp,
+..\user\core\BSP\IMU\HI12_imu.hpp,
+..\user\core\BSP\IMU\HI12Base.hpp,
+..\user\core\BSP\Motor\LK\Lk_motor.hpp,
+..\user\core\HAL\CAN\can_hal.hpp,
+..\user\core\HAL\UART\uart_hal.hpp,
+..\feeder_fsm\gimbal_fsm.hpp 
+TO Hero_gimbal.axf RTE NOPRINT

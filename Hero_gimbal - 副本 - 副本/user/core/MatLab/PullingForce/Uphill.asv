@@ -1,0 +1,48 @@
+%唐舵：（假期版）
+
+l = 0.54;      % 车长 单位：米
+k = 0.54;      % 车宽 单位：米  
+h = 0.0975;    % 重心高度 单位：米 重心到底盘+1/2轮子半径
+m = 14;        % 质量 单位：kg
+g = 9.8;       % 重力加速度
+
+beta_range = 0:1:43; %0到43度，步长为1度
+A0_values = zeros(size(beta_range));
+A1_values = zeros(size(beta_range));
+A2_values = zeros(size(beta_range));
+A3_values = zeros(size(beta_range));
+
+for i = 1:length(beta_range)
+    beta = deg2rad(beta_range(i));
+    
+    % 重心投影点坐标
+    P_center = [-h*sin(beta), 0, -h*cos(beta)];
+    
+    % 计算四个距离
+    L0 = norm(P_center - [l/2, k/2, h]);
+    L1 = norm(P_center - [-l/2, k/2, h]);
+    L2 = norm(P_center - [l/2, -k/2, h]);
+    L3 = norm(P_center - [-l/2, -k/2, h]);
+    
+    % 求解增益系数
+    % N0*L0 = N1*L1 = N2*L2 = N3*L3 = k
+    % N0 + N1 + N2 + N3 = mg*cos(beta)
+    k_value = (m*g*cos(beta)) / (1/L0 + 1/L1 + 1/L2 + 1/L3);
+    
+    N0 = k_value / L0;
+    N1 = k_value / L1;
+    N2 = k_value / L2; 
+    N3 = k_value / L3;
+    
+    total_N = N0 + N1 + N2 + N3;
+    A0_values(i) = N0 / total_N;
+    A1_values(i) = N1 / total_N;
+    A2_values(i) = N2 / total_N;
+    A3_values(i) = N3 / total_N;
+end
+
+% 对每个增益系数进行多项式拟合
+p0 = polyfit(beta_range, A0_values, 3);  % 3次多项式拟合
+p1 = polyfit(beta_range, A1_values, 3);
+p2 = polyfit(beta_range, A2_values, 3);
+p3 = polyfit(beta_range, A3_values, 3);

@@ -1,0 +1,90 @@
+<html>
+<body>
+<pre>
+<h1>礦ision Build Log</h1>
+<h2>Tool Versions:</h2>
+IDE-Version: μVision V5.39.0.0
+Copyright (C) 2023 ARM Ltd and ARM Germany GmbH. All rights reserved.
+License Information: 1 hp, 2, LIC=7YKYW-QAB68-WKFB8-3HGEF-N10VF-X1PID
+ 
+Tool Versions:
+Toolchain:       MDK-ARM Professional  Version: 5.39.0.0
+Toolchain Path:  D:\Keil5\Core\ARM\ARMCLANG\Bin
+C Compiler:      ArmClang.exe V6.21
+Assembler:       Armasm.exe V6.21
+Linker/Locator:  ArmLink.exe V6.21
+Library Manager: ArmAr.exe V6.21
+Hex Converter:   FromElf.exe V6.21
+CPU DLL:         SARMCM3.DLL V5.39.0.0
+Dialog DLL:      DCM.DLL V1.17.5.0
+Target DLL:      Segger\JL2CM3.dll V2.99.43.0
+Dialog DLL:      TCM.DLL V1.56.4.0
+ 
+<h2>Project:</h2>
+C:\Users\hp\Desktop\hero3\Hero_chassis - 副本 (3) - 副本 - 副本\MDK-ARM\Hero.uvprojx
+Project File Date:  07/17/2026
+
+<h2>Output:</h2>
+*** Using Compiler 'V6.21', folder: 'D:\Keil5\Core\ARM\ARMCLANG\Bin'
+*** Warning: You are compiling one or more files of source type C++ and have selected 'use MicroLIB'. MicroLIB does not support C++!
+  
+Build target 'Hero'
+
+FCARM uses the following Files via command file '.\Auto_FcArm_Cmd.inp':
+..\user\core\Alg\ChassisCalculation\CalculationBase.hpp,
+..\user\core\Alg\ChassisCalculation\OmniCalculation.hpp,
+..\user\core\Alg\ChassisCalculation\StringWheel.hpp,
+..\user\core\Alg\Filter\Filter.hpp,
+..\user\core\BSP\RemoteControl\DT7.hpp,
+..\user\core\BSP\IMU\HI12_imu.hpp,
+..\user\core\BSP\IMU\HI12Base.hpp,
+..\user\core\APP\Heat_Detector\Heat_Control.hpp,
+..\user\core\HAL\UART\uart_hal.hpp,
+..\user\core\HAL\UART\interface\uart_bus.hpp,
+..\user\core\HAL\UART\interface\uart_device.hpp,
+..\user\core\HAL\UART\impl\uart_bus_impl.hpp,
+..\user\core\HAL\UART\impl\uart_device_impl.hpp,
+..\fsm\chassis_fsm.hpp 
+TO Hero.hex RTE NOPRINT
+custom translating @.\Auto_FcArm_Cmd.inp...
+Custom: D:\Keil5\Core\ARM\Bin\FCARM.exe @.\Auto_FcArm_Cmd.inp
+FCARM FILE CONVERTER V2.59
+Completed 14 File(s), Ratio 100%
+compiling Hero.hex...
+compiling uart_bus.cpp...
+compiling super_cupacitor.cpp...
+../user/core/HAL/CAN/can_hal.hpp(12): warning: #pragma once in main file [-Wpragma-once-outside-header]
+   12 | #pragma once
+      |         ^
+1 warning generated.
+compiling can_hal.hpp...
+compiling gimbal_refree.cpp...
+linking...
+Program Size: Code=65052 RO-data=2476 RW-data=60 ZI-data=42292  
+FromELF: creating hex file...
+"Hero\Hero.axf" - 0 Error(s), 1 Warning(s).
+
+<h2>Software Packages used:</h2>
+
+Package Vendor: ARM
+                http://www.keil.com/pack/ARM.CMSIS.5.9.0.pack
+                ARM::CMSIS@5.9.0
+                CMSIS (Common Microcontroller Software Interface Standard)
+   * Component: CORE Version: 5.6.0
+
+Package Vendor: Keil
+                https://www.keil.com/pack/Keil.STM32F4xx_DFP.3.0.0.pack
+                Keil::STM32F4xx_DFP@3.0.0
+                STMicroelectronics STM32F4 Series Device Support
+
+<h2>Collection of Component include folders:</h2>
+  ./RTE/_Hero
+  D:/Keil5/Pack/ARM/CMSIS/5.9.0/CMSIS/Core/Include
+
+<h2>Collection of Component Files used:</h2>
+
+   * Component: ARM::CMSIS:CORE@5.6.0
+Build Time Elapsed:  00:00:05
+</pre>
+</body>
+</html>
