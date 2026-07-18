@@ -1,0 +1,26 @@
+*** Using Compiler 'V6.18', folder: 'D:\Keil_v5\Core\ARM\ARMCLANG\Bin'
+Build target 'Hero_gimbal'
+
+FCARM uses the following Files via command file '.\Auto_FcArm_Cmd.inp':
+..\user\core\Alg\ChassisCalculation\CalculationBase.hpp,
+..\user\core\Alg\ChassisCalculation\OmniCalculation.hpp,
+..\user\core\Alg\ChassisCalculation\StringWheel.hpp,
+..\user\core\BSP\Motor\MotorBase.hpp,
+..\user\core\BSP\Motor\Dji\DjiMotor.hpp,
+..\user\core\BSP\RemoteControl\DT7.hpp,
+..\user\core\BSP\IMU\HI12_imu.hpp,
+..\user\core\BSP\IMU\HI12Base.hpp,
+..\user\core\BSP\Motor\LK\Lk_motor.hpp,
+..\user\core\HAL\CAN\can_hal.hpp 
+TO Hero_gimbal.axf RTE NOPRINT
+custom translating @.\Auto_FcArm_Cmd.inp...
+Custom: D:\Keil_v5\Core\ARM\Bin\FCARM.exe @.\Auto_FcArm_Cmd.inp
+
+FCARM FILE CONVERTER V2.59
+Completed 10 File(s), Ratio 100%
+compiling Hero_gimbal.axf...
+linking...
+Program Size: Code=30590 RO-data=650 RW-data=104 ZI-data=40064  
+FromELF: creating hex file...
+"Hero_gimbal\Hero_gimbal.axf" - 0 Error(s), 0 Warning(s).
+Build Time Elapsed:  00:00:02

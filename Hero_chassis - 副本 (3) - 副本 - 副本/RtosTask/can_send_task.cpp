@@ -17,6 +17,7 @@
 #include "../user/core/BSP/Motor/Dji/DjiMotor.hpp"
 #include "../fsm/chassis_fsm.hpp"
 #include "../user/core/Alg/PowerControl-TestVersion/PowerControlTestVersion.hpp"
+#include "../user/core/Alg/PowerControl/PowerControl.hpp"
 #include "../user/core/HAL/UART/uart_hal.hpp"
 #include "../communication/super_cupacitor.hpp"
 #include "../communication/gimbal_refree.hpp"
@@ -125,6 +126,33 @@ float poly_coeffs[6] = {
     0.000032f    // K5
 };
 // ========== 功率校准扫频测试结束 ==========
+
+// ========== 底盘功率控制 (衰减电流法) ==========
+// 超电配置 (根据实际硬件修改总容量)
+const float SUPERCAP_TOTAL_CAPACITY = 2000.0f;                        // 超电总容量 (J)
+const float ABUNDANCE_LINE          = SUPERCAP_TOTAL_CAPACITY * 0.8f; // 富足线 = 80%总容量
+const float POVERTY_LINE            = 250.0f;                         // 贫困线 (生死线, <250J强制80%功率)
+
+// 功率控制器 (衰减电流法执行层)
+ALG::PowerControl::PowerControl<4> chassis_power_ctrl;
+
+// 能量环状态机                                        //富足线，贫困线，最小功率限制(防止功率太小跑不动)
+ALG::PowerControl::EnergyRing energy_ring(ABUNDANCE_LINE, POVERTY_LINE, 56.0f);
+
+// 策略层 (数据源仲裁: 裁判系统/超电 在线/离线判断)
+ALG::PowerControl::PowerControlStrategy power_strategy(ABUNDANCE_LINE);
+
+// 富足环 PID — 目标: 1600J(80%总容量), 仅energy≥1600J时被EnergyRing使用
+//   能量越高 → AbundanceOut越负 → P_max越大 → 释放过剩能量, 防过充
+//   能量<1600J → EnergyRing走中间分支, 直接P_ref, 此PID不参与
+//   Kp=0.05 → 能量2000J时AbundanceOut≈-20W, P_max≈100W
+ALG::PID::PID abundance_energy_pid(0.05f, 0.0f, 0.0f, 80.0f, 80.0f, 0.0f);
+
+// 贫困环 PID — 目标: 250J (POVERTY_LINE), Shift爆发模式生效
+//   能量>>250J → PovertyOut为负 → P_max = P_ref - (负数) = P_ref + 增量 → 超功率！
+//   Kp=0.05 → 能量1000J时PovertyOut≈-37.5W, P_max≈117.5W
+ALG::PID::PID poverty_energy_pid(0.05f, 0.0f, 0.0f, 80.0f, 80.0f, 0.0f);
+// ========== 功率控制初始化结束 ==========
 
 extern "C" void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 {
@@ -382,6 +410,63 @@ osDelay(1);
      motor_output[1] = motor_pid[1].UpDate(motor_target_speed[1], current_speed_rads[1]);
      motor_output[2] = motor_pid[2].UpDate(motor_target_speed[2], current_speed_rads[2]);
      motor_output[3] = motor_pid[3].UpDate(motor_target_speed[3], current_speed_rads[3]);
+
+	// ========== 底盘功率控制 (衰减电流法) ==========
+	{
+	    // 1. 策略层: 数据源仲裁 (裁判系统 / 超电 在线判断)
+	    power_strategy.Update(
+	        supercap.isOnline(),                              // 超电在线状态
+	        !RM_RefereeSystemDirFlag,                         // 裁判系统在线
+	        (float)ext_power_heat_data_0x0201.chassis_power_limit,  // 裁判功率上限 (W)
+	        (float)ext_power_heat_data_0x0202.chassis_power_buffer, // 缓冲能量 (J)
+	        supercap.getEnergy()                              // 超电剩余能量 (J)
+	    );
+
+	    float current_energy = power_strategy.GetInputEnergy();  //超电剩余能量
+	    float ref_limit      = power_strategy.GetInputLimit();   //
+
+	    // 2. 富足环 PID — 目标=ABUNDANCE_LINE(1600J), 仅energy≥1600J时被EnergyRing使用
+	    //    能量>1600J → AbundanceOut<0 → P_max放大(防过充)
+	    //    能量<1600J → EnergyRing走中间分支, 直接P_ref, 此PID不参与
+	    float abundance_out = abundance_energy_pid.UpDate(ABUNDANCE_LINE, current_energy);
+
+	    // 3. 贫困环 PID — 目标=POVERTY_LINE(250J), Shift爆发模式用
+	    //    能量>>250J → PovertyOut为负 → P_max = P_ref - (负数) = 超功率!
+	    float poverty_out = poverty_energy_pid.UpDate(POVERTY_LINE, current_energy);
+
+	    // 4. 能量环状态机: 根据能量状态动态计算 PowerMax
+	    energy_ring.energyring(
+	        abundance_out,      // 富足环输出
+	        poverty_out,        // 贫困环输出
+	        ref_limit,          // 裁判系统功率上限
+	        current_energy,     // 当前能量 (策略层可能伪造)
+	        false,              // isShift (暂未映射)
+	        false               // isPower (充电模式暂未实现)
+	    );
+	    float PowerMax = energy_ring.GetPowerMax();
+
+	    // 5. 转为物理电流 → 调用电流衰减法
+	    //    PID 输出 [-16384, 16384] 映射到 [-20A, 20A] (GM3508)
+	    float I[4], V[4], I_other[4];
+	    for (int i = 0; i < 4; i++) {
+	        I[i]       = motor_output[i] * (20.0f / 16384.0f);     // raw → 物理电流 (A)
+	        V[i]       = chassis_motor.getVelocityRads(i + 1);       // 转子转速 (rad/s)
+	        I_other[i] = 0.0f;                                       // 无前馈
+	    }
+
+	    // CorrectionConstant = 3*K0, 补偿模型与真实功率偏差
+	    chassis_power_ctrl.DecayingCurrent(
+	        I, V, poly_coeffs, I_other,
+	        3.0f * poly_coeffs[0],   // CorrectionConstant ≈ 10.7W
+	        PowerMax
+	    );
+
+	    // 6. 物理电流 → raw, 覆写 motor_output
+	    for (int i = 0; i < 4; i++) {
+	        motor_output[i] = chassis_power_ctrl.getCurrentCalculate(i) * (16384.0f / 20.0f);
+	    }
+	}
+	// ========== 功率控制结束 ==========
 
             for (int i = 0; i < 4; i++) {
     // motor_target_speed[i] = ik.GetMotor(i);

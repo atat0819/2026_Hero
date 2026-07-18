@@ -4,7 +4,6 @@
 #include "queue.h"
 #include "usart.h"
 #include "../user/core/HAL/UART/uart_hal.hpp"
-#include "HI14.hpp"
 #include "../user/core/BSP/version/vision_communication.hpp"
 #include "gimbal_task.hpp"
 #include <cstring>
@@ -15,12 +14,13 @@ QueueHandle_t IMUDataQueue;
 uint8_t receivedata[18];
 RemoteData_t remote;
 BSP::REMOTE_CONTROL::RemoteController remoteController(100);
+BSP::IMU::HI12_float imu;
 
 extern DMA_HandleTypeDef hdma_usart1_rx;
 extern DMA_HandleTypeDef hdma_usart3_rx;
 extern DMA_HandleTypeDef hdma_uart8_rx;
 
-#define IMU_DMA_BUF_SIZE 128
+#define IMU_DMA_BUF_SIZE 82   // HI12 数据帧长度
 static uint8_t imu_dma_buffer[IMU_DMA_BUF_SIZE];
 
 // 视觉通信实例（文件作用域，HAL 回调需要访问其 RX 缓冲区）
@@ -179,13 +179,9 @@ extern "C" void remote_control_task(void *argument)
         vision_comm.ParseRxData(data.buffer, data.size);
     });
 
-    // UART8 回调：DMA+空闲 → 逐字节喂给 IMU 状态机
-    IMU_Init();
+    // UART8 回调：DMA+空闲 → 整帧喂给 HI12 IMU
     uart8.register_rx_callback([](const HAL::UART::Data &data) {
-        for (uint16_t i = 0; i < data.size; i++)
-        {
-            IMU_UART_RxCallBack(data.buffer[i]);
-        }
+        imu.DataUpdate(data.buffer);
     });
 
     // 启动接收
@@ -217,13 +213,13 @@ extern "C" void remote_control_task(void *argument)
             xQueueOverwrite(remoteDataQueue, &remote);
         }
 
-        if (ImuDataReady)
+        if (imu.isConnected())
         {
             // 视觉模式：S1 中 + S2 中
             uint8_t vision_mode = (remoteController.get_s1() == BSP::REMOTE_CONTROL::RemoteController::MIDDLE &&
                                    remoteController.get_s2() == BSP::REMOTE_CONTROL::RemoteController::MIDDLE) ? 1 : 0;
 
-            float quaternion[4] = {ImuFloat.qw, ImuFloat.qx, ImuFloat.qy, ImuFloat.qz};
+            float quaternion[4] = {imu.GetQuaternion(0), imu.GetQuaternion(1), imu.GetQuaternion(2), imu.GetQuaternion(3)};
 
             // 弹丸预估初速度：取3个摩擦轮转速的绝对值平均值，换算为线速度
             // v (m/s) = RPM × π × d / 60,  d = 64.1mm

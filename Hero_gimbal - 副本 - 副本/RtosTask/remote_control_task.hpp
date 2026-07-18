@@ -6,7 +6,6 @@
 #include "cmsis_os.h"
 #include "../user/core/BSP/RemoteControl/DT7.hpp"
 #include "BSP/IMU/HI12_imu.hpp"
-#include "HI14.hpp" // 包含 HI14 的头文件，获取陀螺仪数据结构定义
 #include "../user/core/BSP/version/vision_communication.hpp"
 
 

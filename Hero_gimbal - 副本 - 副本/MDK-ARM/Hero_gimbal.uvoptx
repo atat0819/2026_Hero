@@ -120,7 +120,6 @@
         <SetRegEntry>
           <Number>0</Number>
           <Key>DLGUARM</Key>
-          <Name>?</Name>
         </SetRegEntry>
         <SetRegEntry>
           <Number>0</Number>
@@ -726,6 +725,21 @@
           <count>71</count>
           <WinNumber>2</WinNumber>
           <ItemText>instance,0x10</ItemText>
+        </Ww>
+        <Ww>
+          <count>72</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>imu,0x0A</ItemText>
+        </Ww>
+        <Ww>
+          <count>73</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>\\Hero_gimbal\../RtosTask/remote_control_task.cpp\imu.angle[2]</ItemText>
+        </Ww>
+        <Ww>
+          <count>74</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>yaw_target_speed</ItemText>
         </Ww>
       </WatchWindow2>
       <Tracepoint>

@@ -149,7 +149,7 @@ namespace ALG::PowerControl
                 // 1. 遍历计算原始功率，同时准备全局方程参数 A, B, C
                 for (uint8_t i = 0; i < N; i++)
                 {
-                    this->SetMotorParameters(i, I[i], V[i], K); // 这里更新了基类的功率计算
+                    this->SetMotorParameters(i, I[i] + I_other[i], V[i], K); // 使用总目标电流(I+前馈)计算功率
                     if(this->GetPowerCalculate(i) < 0)
                     {
                         GenerateElectricity += this->GetPowerCalculate(i);
@@ -312,22 +312,23 @@ namespace ALG::PowerControl
                     {
                         PowerMax = 0.8f * P_referee;
                     }
-                    // 2. 如果按下Shift (加速模式)
+                    // 2. 爆发模式 (Shift) → P_max = P_ref - PovertyOut
+                    //    PovertyOut为负 → P_max = P_ref + 增量 → 超功率加速
                     else if (isShift)
                     {
                         PowerMax = PowerMax_poverty;
                     }
-                    // 3. Shift未按下的一般情况
+                    // 3. 正常巡航 → 根据能量水平分两档
                     else
                     {
                         if (CurrentEnergy >= AbundanceLine)
                         {
-                            // 能量充足：使用富足功率限制
+                            // 能量富足(≥80%): AbundanceOut为负→轻微放大功率, 释放过剩能量
                             PowerMax = PowerMax_abundance;
                         }
-                        else // 在贫困线和富足线之间
+                        else
                         {
-                            // 能量中等：满等级功率运行
+                            // 中间状态(250J~80%): 严格遵守裁判功率限制
                             PowerMax = P_referee;
                         }
                     }

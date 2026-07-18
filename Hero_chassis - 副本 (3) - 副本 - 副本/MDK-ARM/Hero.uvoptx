@@ -431,6 +431,16 @@
           <WinNumber>2</WinNumber>
           <ItemText>graphic_data_struct_0x0301</ItemText>
         </Ww>
+        <Ww>
+          <count>23</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>power_strategy</ItemText>
+        </Ww>
+        <Ww>
+          <count>24</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>energy_ring</ItemText>
+        </Ww>
       </WatchWindow2>
       <Tracepoint>
         <THDelay>0</THDelay>

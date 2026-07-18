@@ -1,69 +1,45 @@
-# Prerequisites
-*.d
-
-# Compiled Object files
-*.slo
-*.lo
+# ==========================================
+# 1. 过滤 Keil MDK 编译产生的庞大垃圾文件
+# ==========================================
+*.uvguix.*
+*.uv2.bak
+*.pco
+*.bak
+*.dep
+*.pyc
 *.o
-*.obj
+*.d
+*.crf
+*.lnp
+*.axf
+*.htm
+*.build_log.htm
+*.map
+*.lst
+JLinkLog.txt
+Listings/
+Objects/
 
-# Precompiled Headers
-*.gch
-*.pch
-
-# Linker files
-*.ilk
-
-# Debugger Files
-*.pdb
-
-# Compiled Dynamic libraries
-*.so
-*.dylib
-*.dll
-*.so.*
-
-
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
-*.lai
-*.la
-*.a
-*.lib
-
-# Executables
-*.exe
-*.out
-*.app
-
-# Build directories
-build/
-Build/
-build-*/
-
-# CMake generated files
-CMakeFiles/
+# ==========================================
+# 2. 如果你以后用 CMake / GCC 编译，过滤这些
+# ==========================================
+[bB]uild/
 CMakeCache.txt
+CMakeFiles/
 cmake_install.cmake
 Makefile
-install_manifest.txt
-compile_commands.json
+*.elf
+*.bin
+*.hex
 
-# Temporary files
-*.tmp
-*.log
-*.bak
-*.swp
-
-# vcpkg
-vcpkg_installed/
-
-# debug information files
-*.dwo
-
-# test output & cache
-Testing/
+# ==========================================
+# 3. 过滤代码编辑器和本地缓存
+# ==========================================
+.vscode/.browse.VC.db
+.vscode/.cmaketools/
+.vscode/.clangd/
+.vscode/ipch/
+.clangd/
 .cache/
+.DS_Store
+Thumbs.db

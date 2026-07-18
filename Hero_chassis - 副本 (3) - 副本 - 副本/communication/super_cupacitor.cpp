@@ -102,7 +102,7 @@ HAL_StatusTypeDef SuperCapacitor::sendToSuperCap(float level_power,
 
     // 4. 通过 CAN1 发送
     auto &can_bus = HAL::CAN::get_can_bus_instance();
-    bool success = can_bus.get_device(HAL::CAN::CanDeviceId::HAL_Can2).send(frame);
+    bool success = can_bus.get_device(HAL::CAN::CanDeviceId::HAL_Can1).send(frame);
 
     return success ? HAL_OK : HAL_ERROR;
 }

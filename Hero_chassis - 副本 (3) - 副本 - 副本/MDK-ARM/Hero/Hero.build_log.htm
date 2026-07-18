@@ -21,7 +21,7 @@ Target DLL:      Segger\JL2CM3.dll V2.99.43.0
 Dialog DLL:      TCM.DLL V1.56.4.0
  
 <h2>Project:</h2>
-C:\Users\hp\Desktop\hero3\Hero_chassis - ∏±±æ (3) - ∏±±æ - ∏±±æ\MDK-ARM\Hero.uvprojx
+C:\Users\hp\Desktop\2026_Hero\Hero_chassis - ∏±±æ (3) - ∏±±æ - ∏±±æ\MDK-ARM\Hero.uvprojx
 Project File Date:  07/17/2026
 
 <h2>Output:</h2>
@@ -51,18 +51,32 @@ Custom: D:\Keil5\Core\ARM\Bin\FCARM.exe @.\Auto_FcArm_Cmd.inp
 FCARM FILE CONVERTER V2.59
 Completed 14 File(s), Ratio 100%
 compiling Hero.hex...
-compiling uart_bus.cpp...
-compiling super_cupacitor.cpp...
 ../user/core/HAL/CAN/can_hal.hpp(12): warning: #pragma once in main file [-Wpragma-once-outside-header]
    12 | #pragma once
       |         ^
 1 warning generated.
 compiling can_hal.hpp...
 compiling gimbal_refree.cpp...
+compiling can_bus.cpp...
+compiling uart_bus.cpp...
+compiling super_cupacitor.cpp...
+../RtosTask/can_send_task.cpp(2): warning: In file included from...
+../RtosTask/remote_task.hpp(13): warning: anonymous non-C-compatible type given name for linkage purposes by typedef declaration; add a tag name here [-Wnon-c-typedef-for-linkage]
+   13 | typedef struct
+      |               ^
+      |                RemoteData_t
+../RtosTask/remote_task.hpp(15): note: type is not C-compatible due to this default member initializer
+   15 |     float vx = 0.0f; // ÂâçÂêéÈÄüÂ∫¶ÔºåÂçï‰Ωç m/s
+      |                ^~~~
+../RtosTask/remote_task.hpp(20): note: type is given name 'RemoteData_t' for linkage purposes by this typedef declaration
+   20 | } RemoteData_t;
+      |   ^
+1 warning generated.
+compiling can_send_task.cpp...
 linking...
-Program Size: Code=65052 RO-data=2476 RW-data=60 ZI-data=42292  
+Program Size: Code=67796 RO-data=2476 RW-data=84 ZI-data=42716  
 FromELF: creating hex file...
-"Hero\Hero.axf" - 0 Error(s), 1 Warning(s).
+"Hero\Hero.axf" - 0 Error(s), 2 Warning(s).
 
 <h2>Software Packages used:</h2>
 
