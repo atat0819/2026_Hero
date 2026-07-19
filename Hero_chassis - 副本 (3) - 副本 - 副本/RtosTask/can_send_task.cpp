@@ -89,7 +89,7 @@ ALG::PID::PID motor_pid[4] = {
     {130.0f, 0.0f, 0.0f, 16384.0f, 5000.0f, 500.0f},   //电机1 (扫频PID)
 	{130.0f, 0.0f, 0.0f, 16384.0f, 5000.0f, 500.0f},    //电机2
 	{130.0f, 0.0f, 0.0f, 16384.0f, 5000.0f, 500.0f},    //电机3
-	{130.0f, 0.2f, 0.0f, 16384.0f, 5000.0f, 500.0f}     //电机4	
+	{130.0f, 0.0f, 0.0f, 16384.0f, 5000.0f, 500.0f}     //电机4	
 };
 
 ALG::PID::PID test_pid = {0.0f, 0.0f, 0.0f, 10000.0f, 5000.0f, 500.0f};
@@ -109,6 +109,7 @@ float target = 10.0f; // 目标速度（示例值）
 void vofa_send(float x1, float x2, float x3, float x4, float x5, float x6);
 float motor_target_speed[4];
 float motor_output[4];
+float motor_output_pre[4];  // 功率控制前的电流，用于VOFA对比
 float current_speed_rads[4];
 float c = 2.0f;
 float phase_comp = 0.0f;   // 这个变量用于补偿系统的相位滞后，具体值需要通过实验调整
@@ -255,11 +256,22 @@ osDelay(500);
     for (;;)
     {
          //获取底盘旋转速度
-         ChassisData.vx = remoteController.get_left_y()*Gain;
-         ChassisData.vy = remoteController.get_left_x()*Gain;
-         ChassisData.wz = remoteController.get_right_x() * c;
-         ChassisData.s1 = remoteController.get_s1();
-         ChassisData.s2 = remoteController.get_s2();
+        //  ChassisData.vx = remoteController.get_left_y()*Gain;
+        //  ChassisData.vy = remoteController.get_left_x()*Gain;
+        //  ChassisData.wz = remoteController.get_right_x() * c;
+        //  ChassisData.s1 = remoteController.get_s1();
+        //  ChassisData.s2 = remoteController.get_s2();
+
+                 //获取底盘旋转速度
+         //ChassisData.wz = remoteController.get_right_x() * c;
+
+         // 测试模式：遥控器直接控制底盘，绕过云台CAN通信
+         gimbalChassis_communicate.vx = remoteController.get_left_y();
+         gimbalChassis_communicate.vy = remoteController.get_left_x();
+         gimbalChassis_communicate.s1 = remoteController.get_s1();
+         gimbalChassis_communicate.s2 = remoteController.get_s2();
+         yaw_offset_updated = true;  // 模拟云台在线，否则FSM强制STOP
+
 
          // 超级电容在线状态更新
          supercap.updateOnlineStatus();
@@ -410,6 +422,8 @@ osDelay(1);
      motor_output[1] = motor_pid[1].UpDate(motor_target_speed[1], current_speed_rads[1]);
      motor_output[2] = motor_pid[2].UpDate(motor_target_speed[2], current_speed_rads[2]);
      motor_output[3] = motor_pid[3].UpDate(motor_target_speed[3], current_speed_rads[3]);
+	// 保存功率控制前的电流，用于VOFA对比衰减前后
+		memcpy(motor_output_pre, motor_output, sizeof(motor_output_pre));
 
 	// ========== 底盘功率控制 (衰减电流法) ==========
 	{
@@ -428,11 +442,12 @@ osDelay(1);
 	    // 2. 富足环 PID — 目标=ABUNDANCE_LINE(1600J), 仅energy≥1600J时被EnergyRing使用
 	    //    能量>1600J → AbundanceOut<0 → P_max放大(防过充)
 	    //    能量<1600J → EnergyRing走中间分支, 直接P_ref, 此PID不参与
-	    float abundance_out = abundance_energy_pid.UpDate(ABUNDANCE_LINE, current_energy);
+	    // 对能量开根号：E = ½CU²，√E ∝ U，保证全电压区间PID响应一致
+	    float abundance_out = abundance_energy_pid.UpDate(sqrtf(ABUNDANCE_LINE), sqrtf(current_energy));
 
 	    // 3. 贫困环 PID — 目标=POVERTY_LINE(250J), Shift爆发模式用
 	    //    能量>>250J → PovertyOut为负 → P_max = P_ref - (负数) = 超功率!
-	    float poverty_out = poverty_energy_pid.UpDate(POVERTY_LINE, current_energy);
+	    float poverty_out = poverty_energy_pid.UpDate(sqrtf(POVERTY_LINE), sqrtf(current_energy));
 
 	    // 4. 能量环状态机: 根据能量状态动态计算 PowerMax
 	    energy_ring.energyring(
@@ -462,11 +477,20 @@ osDelay(1);
 	    );
 
 	    // 6. 物理电流 → raw, 覆写 motor_output
-	    for (int i = 0; i < 4; i++) {
-	        motor_output[i] = chassis_power_ctrl.getCurrentCalculate(i) * (16384.0f / 20.0f);
-	    }
+	     for (int i = 0; i < 4; i++) {
+	         motor_output[i] = chassis_power_ctrl.getCurrentCalculate(i) * (16384.0f / 20.0f);
+	     }
 	}
 	// ========== 功率控制结束 ==========
+		// 用衰减后的电流重算功率，用于VOFA对比预测功率 vs 衰减后实际功率
+		float post_power = 0.0f;
+		for (int i = 0; i < 4; i++) {
+		    float I_post = motor_output[i] * (20.0f / 16384.0f);
+		    float w = chassis_motor.getVelocityRads(i + 1);
+		    post_power += poly_coeffs[0] + poly_coeffs[1]*I_post + poly_coeffs[2]*w
+		                + poly_coeffs[3]*I_post*w + poly_coeffs[4]*I_post*I_post + poly_coeffs[5]*w*w;
+		}
+		post_power += 3.0f * poly_coeffs[0]; // CorrectionConstant
 
             for (int i = 0; i < 4; i++) {
     // motor_target_speed[i] = ik.GetMotor(i);
@@ -483,10 +507,10 @@ osDelay(1);
  chassis_motor.sendCAN();
 
            
-           //4. 可视化调试 (VOFA+)
-           vofa_send(motor_target_speed[0], current_speed_rads[0],
-                     motor_target_speed[1], current_speed_rads[1],
-                     motor_target_speed[2], current_speed_rads[2]);
+       //4. VOFA: pre_I, post_I, PowerTotal(预测), post_power(衰减后), PowerMax, eta*100
+	       vofa_send(motor_output_pre[0], motor_output[0],
+	                 chassis_power_ctrl.getPowerTotal(), post_power,
+	                 energy_ring.GetPowerMax(), chassis_power_ctrl.getEta() * 100.0f);
 // 修复后：加上了取地址符 &
 //HAL_UART_Transmit_DMA(&huart6, (const uint8_t*)&yaw_offset_rad, sizeof(yaw_offset_rad));
 

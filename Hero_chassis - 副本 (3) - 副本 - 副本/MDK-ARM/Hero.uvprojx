@@ -696,6 +696,16 @@
               <FileType>9</FileType>
               <FilePath>..\user\core\Alg\Filter\Filter.hpp</FilePath>
             </File>
+            <File>
+              <FileName>PowerControl.hpp</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\user\core\Alg\PowerControl\PowerControl.hpp</FilePath>
+            </File>
+            <File>
+              <FileName>PowerControlBase.hpp</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\user\core\Alg\PowerControl\PowerControlBase.hpp</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

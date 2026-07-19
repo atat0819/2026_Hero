@@ -166,6 +166,7 @@ namespace ALG::PowerControl
                 // 2. 判断是否超限
                 if(PowerTotal < PowerMax)
                 {
+                    eta = 1.0f;  // 未超功率，不衰减
                     for(uint8_t i = 0; i < N; i++)
                     {
                         Current[i] = I[i];
@@ -227,6 +228,15 @@ namespace ALG::PowerControl
             float getPowerTotal()
             {
                 return PowerTotal;
+            }
+
+            /**
+             * @brief 获取电流衰减系数
+             * @return float eta (0~1, 1=未衰减)
+             */
+            float getEta()
+            {
+                return eta;
             }
 
         private:
