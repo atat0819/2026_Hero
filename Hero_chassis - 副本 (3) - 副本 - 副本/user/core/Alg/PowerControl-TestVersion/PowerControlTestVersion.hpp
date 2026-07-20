@@ -159,7 +159,6 @@ namespace Alg::PowerControlTestVersion
              */
             float SinExpected(float t, float step, float Max, float Frequency)
             {
-                t = 0.001f;  // 1ms
                 if (test_done)
                 {
                     target = 0.0f;  // 测试完成，停止
