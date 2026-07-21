@@ -79,9 +79,6 @@ int main(void)
 
   /* USER CODE BEGIN 1 */
 
-  /* 兜底强制开启 FPU — 防止启动文件在 SystemInit 之前就触发浮点指令 */
-  SCB->CPACR |= ((3UL << 10*2)|(3UL << 11*2));
-
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/

@@ -126,22 +126,9 @@ template <uint8_t N> class DjiMotorBase : public MotorBase<N>
         memcpy(frame.data, msd.data, 8);
         frame.is_extended_id = false;
         frame.is_remote_frame = false;
-
-        if (HAL::CAN::get_can_bus_instance().get_can1().send(frame))
-        {
-            send_fail_cnt_ = 0;  // 发送成功，清零失败计数
-        }
-        else
-        {
-            send_fail_cnt_++;     // 发送失败，累加计数
-        }
+        
+        HAL::CAN::get_can_bus_instance().get_can1().send(frame);
     }
-
-    /**
-     * @brief 获取CAN发送连续失败次数（用于上层检测CAN通信状态）
-     * @return uint32_t 连续失败次数，0表示通信正常
-     */
-    uint32_t getSendFailCount() const { return send_fail_cnt_; }
 
   protected:
     struct alignas(uint64_t) DjiMotorfeedback
@@ -214,7 +201,6 @@ template <uint8_t N> class DjiMotorBase : public MotorBase<N>
     uint8_t recv_idxs_[N];         // ID索引
     uint32_t send_idxs_;
     HAL::CAN::Frame msd;
-    uint32_t send_fail_cnt_ = 0;   // CAN发送连续失败计数
 
 
 

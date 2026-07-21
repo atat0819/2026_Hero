@@ -393,17 +393,17 @@ if (chassis_fsm.Get_Mode() != last_mode)
 }
 /**************************************************************** */
            // STOP 模式：直接清零，跳过后续控制，防疯车
-//if (chassis_fsm.Get_Mode() == CHASSIS_STOP)
-//{
-//    for (int i = 0; i < 4; i++)
-//    {
-//        motor_pid[i].reset();
-//        chassis_motor.setCAN((int16_t)0, i + 1);
-//    }
-//    chassis_motor.sendCAN();
-//osDelay(1);
-//    continue;
-//}
+if (chassis_fsm.Get_Mode() == CHASSIS_STOP)
+{
+   for (int i = 0; i < 4; i++)
+   {
+       motor_pid[i].reset();
+       chassis_motor.setCAN((int16_t)0, i + 1);
+   }
+   chassis_motor.sendCAN();
+osDelay(1);
+   continue;
+}
 /**************************************************************** */
         ik.OmniInvKinematics(vx_body, vy_body, wz_cmd, 0.0f, 1.0f, 1.0f);
         //ik.OmniInvKinematics(ChassisData.vx, ChassisData.vy, -ChassisData.wz, 0.0f, 1.0f, 1.0f);
@@ -477,9 +477,9 @@ if (chassis_fsm.Get_Mode() != last_mode)
 	    );
 
 	    // 6. 物理电流 → raw, 覆写 motor_output
-//	     for (int i = 0; i < 4; i++) {
-//	         motor_output[i] = chassis_power_ctrl.getCurrentCalculate(i) * (16384.0f / 20.0f);
-//	     }
+	     for (int i = 0; i < 4; i++) {
+	         motor_output[i] = chassis_power_ctrl.getCurrentCalculate(i) * (16384.0f / 20.0f);
+	     }
 	}
 	// ========== 功率控制结束 ==========
 		// 用衰减后的电流重算功率，用于VOFA对比预测功率 vs 衰减后实际功率

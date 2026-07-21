@@ -82,7 +82,7 @@
           </BeforeMake>
           <AfterMake>
             <RunUserProg1>0</RunUserProg1>
-            <RunUserProg2>0</RunUserProg2>
+            <RunUserProg2>1</RunUserProg2>
             <UserProg1Name></UserProg1Name>
             <UserProg2Name></UserProg2Name>
             <UserProg1Dos16Mode>0</UserProg1Dos16Mode>
@@ -905,36 +905,6 @@
               <FileName>uart_device_impl.hpp</FileName>
               <FileType>9</FileType>
               <FilePath>..\user\core\HAL\UART\impl\uart_device_impl.hpp</FilePath>
-            </File>
-            <File>
-              <FileName>logger.cpp</FileName>
-              <FileType>8</FileType>
-              <FilePath>..\user\core\HAL\LOGGER\logger.cpp</FilePath>
-            </File>
-            <File>
-              <FileName>logger.hpp</FileName>
-              <FileType>9</FileType>
-              <FilePath>..\user\core\HAL\LOGGER\logger.hpp</FilePath>
-            </File>
-            <File>
-              <FileName>SEGGER_RTT_Conf.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\user\core\HAL\LOGGER\SEGGER\Config\SEGGER_RTT_Conf.h</FilePath>
-            </File>
-            <File>
-              <FileName>SEGGER_RTT.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\user\core\HAL\LOGGER\SEGGER\RTT\SEGGER_RTT.c</FilePath>
-            </File>
-            <File>
-              <FileName>SEGGER_RTT.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\user\core\HAL\LOGGER\SEGGER\RTT\SEGGER_RTT.h</FilePath>
-            </File>
-            <File>
-              <FileName>SEGGER_RTT_printf.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\user\core\HAL\LOGGER\SEGGER\RTT\SEGGER_RTT_printf.c</FilePath>
             </File>
           </Files>
         </Group>
