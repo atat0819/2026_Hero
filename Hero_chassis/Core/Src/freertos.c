@@ -113,9 +113,9 @@ void MX_FREERTOS_Init(void) {
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
 	
-	start_can_send = xTaskCreate(can_send_task, "CAN_Send_Task", 1024, NULL, osPriorityAboveNormal, &xCanSendHandle);
-  start_chassis = xTaskCreate(chassis_task, "Chassis_Task", 256, NULL, osPriorityAboveNormal, &xGimbalHandle);
-  start_remote_control = xTaskCreate(remote_task, "Remote_Control_Task", 256, NULL, osPriorityAboveNormal, &xRemoteHandle);
+	start_can_send = xTaskCreate(can_send_task, "CAN_Send_Task", 2048, NULL, osPriorityAboveNormal, &xCanSendHandle);
+  start_chassis = xTaskCreate(chassis_task, "Chassis_Task", 512, NULL, osPriorityAboveNormal, &xGimbalHandle);
+  start_remote_control = xTaskCreate(remote_task, "Remote_Control_Task", 512, NULL, osPriorityAboveNormal, &xRemoteHandle);
 	
 	
   /* USER CODE END RTOS_THREADS */

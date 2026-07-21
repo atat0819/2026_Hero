@@ -1,5 +1,6 @@
 #include "can_send_task.hpp"
 #include "remote_task.hpp"
+#include "HAL/LOGGER/logger.hpp"
 #include "FreeRTOS.h"
 #include "queue.h"
 #include "cmsis_os.h"
@@ -182,6 +183,26 @@ extern "C" void HAL_CAN_RxFifo1MsgPendingCallback(CAN_HandleTypeDef *hcan)
     }
 
 }
+
+/**
+ * @brief CAN 错误回调 — 仅记录错误码，不调用日志（ISR 上下文安全）
+ * @note  AutoBusOff=ENABLE 已启用，硬件会自动恢复
+ */
+extern "C" void HAL_CAN_ErrorCallback(CAN_HandleTypeDef *hcan)
+{
+    /* 仅读取并清除错误，不在此处调用 LOG（避免 ISR 中触发 SEGGER_RTT 格式化） */
+    (void)HAL_CAN_GetError(hcan);
+
+    /* 如果是 Bus-Off，尝试手动恢复（AutoBusOff=ENABLE 时硬件也会自动恢复） */
+    if (hcan->Instance->ESR & CAN_ESR_BOFF)
+    {
+        /* 清除 BOFF 标志需要先请求退出 INIT 模式 */
+        hcan->Instance->MCR &= ~CAN_MCR_SLEEP;
+        hcan->Instance->MCR |= CAN_MCR_INRQ;
+        while ((hcan->Instance->MSR & CAN_MSR_INAK) == 0);
+        hcan->Instance->MCR &= ~CAN_MCR_INRQ;
+    }
+}
 /******************************************************* */
     float wz_cmd = 0.0f;
 
@@ -196,6 +217,11 @@ extern "C" void can_send_task(void *argument)
 
     auto &can1 = HAL::CAN::get_can_bus_instance().get_device(HAL::CAN::CanDeviceId::HAL_Can1);
     auto &can2 = HAL::CAN::get_can_bus_instance().get_device(HAL::CAN::CanDeviceId::HAL_Can2);
+
+    LOG_INFO("========== CAN Send Task Started ==========");
+    LOG_INFO("CAN1/CAN2 bus initialized, waiting for referee system...");
+    osDelay(8000);
+    LOG_INFO("Referee system should be ready. Entering main loop.");
 /************************************************************************************** */
 /************************************************************************************** */
     can1.register_rx_callback([](const HAL::CAN::Frame &frame) {
@@ -384,6 +410,9 @@ vy_body = -vx_gimbal * sinf(compensated_angle) + vy_gimbal * cosf(compensated_an
 /**************************************************************** */
 if (chassis_fsm.Get_Mode() != last_mode)
 {
+    LOG_INFO("Mode switch: %d -> %d (s1=%d, s2=%d)",
+             (int)last_mode, (int)chassis_fsm.Get_Mode(),
+             gimbalChassis_communicate.s1, gimbalChassis_communicate.s2);
     // 模式切换：重置所有电机 PID，清零积分
     for (int i = 0; i < 4; i++)
     {
@@ -393,17 +422,23 @@ if (chassis_fsm.Get_Mode() != last_mode)
 }
 /**************************************************************** */
            // STOP 模式：直接清零，跳过后续控制，防疯车
-//if (chassis_fsm.Get_Mode() == CHASSIS_STOP)
-//{
-//    for (int i = 0; i < 4; i++)
-//    {
-//        motor_pid[i].reset();
-//        chassis_motor.setCAN((int16_t)0, i + 1);
-//    }
-//    chassis_motor.sendCAN();
-//osDelay(1);
-//    continue;
-//}
+if (chassis_fsm.Get_Mode() == CHASSIS_STOP)
+{
+    static int stop_log_cnt = 0;
+    if (++stop_log_cnt >= 500) {
+        LOG_WARN("CHASSIS_STOP active — motors disabled. yaw_updated=%d",
+                 yaw_offset_updated);
+        stop_log_cnt = 0;
+    }
+    for (int i = 0; i < 4; i++)
+    {
+        motor_pid[i].reset();
+        chassis_motor.setCAN((int16_t)0, i + 1);
+    }
+    chassis_motor.sendCAN();
+osDelay(1);
+    continue;
+}
 /**************************************************************** */
         ik.OmniInvKinematics(vx_body, vy_body, wz_cmd, 0.0f, 1.0f, 1.0f);
         //ik.OmniInvKinematics(ChassisData.vx, ChassisData.vy, -ChassisData.wz, 0.0f, 1.0f, 1.0f);
@@ -477,9 +512,9 @@ if (chassis_fsm.Get_Mode() != last_mode)
 	    );
 
 	    // 6. 物理电流 → raw, 覆写 motor_output
-//	     for (int i = 0; i < 4; i++) {
-//	         motor_output[i] = chassis_power_ctrl.getCurrentCalculate(i) * (16384.0f / 20.0f);
-//	     }
+	     for (int i = 0; i < 4; i++) {
+	         motor_output[i] = chassis_power_ctrl.getCurrentCalculate(i) * (16384.0f / 20.0f);
+	     }
 	}
 	// ========== 功率控制结束 ==========
 		// 用衰减后的电流重算功率，用于VOFA对比预测功率 vs 衰减后实际功率
@@ -520,6 +555,52 @@ if (chassis_fsm.Get_Mode() != last_mode)
 
 
        
+        // ==================== 功率调试日志 ====================
+        // 约 1Hz，对比预测功率 vs 功率计实际功率
+        {
+            static int rtt_log_cnt = 0;
+            if (++rtt_log_cnt >= 1000) {
+                float P_pred   = chassis_power_ctrl.getPowerTotal();   // 预测功率 (W)
+                float P_meter  = PowerData.power;                      // 功率计实际功率 (W)
+                float V_meter  = PowerData.voltage;                    // 功率计电压 (V)
+                float I_meter  = PowerData.current;                    // 功率计电流 (A)
+                float P_vi     = V_meter * I_meter;                    // V*I 推算功率
+                float P_err    = P_pred - P_meter;                     // 预测误差
+                float Pmax     = energy_ring.GetPowerMax();
+                float eta      = chassis_power_ctrl.getEta();
+
+                LOG_INFO("========== POWER DEBUG ==========");
+                LOG_INFO("P_pred=%.2f | P_meter=%.2f | P_VI=%.2f (%.2fV*%.2fA)",
+                         P_pred, P_meter, P_vi, V_meter, I_meter);
+                LOG_INFO("Error=%.2f W (%.1f%%) | Pmax=%.2f W | eta=%.3f",
+                         P_err, (P_meter > 0.1f ? (P_err / P_meter * 100.0f) : 0.0f),
+                         Pmax, eta);
+                LOG_INFO("M1: I=%.3fA V=%.1fr/s | M2: I=%.3fA V=%.1fr/s | "
+                         "M3: I=%.3fA V=%.1fr/s | M4: I=%.3fA V=%.1fr/s",
+                         motor_output_pre[0] * (20.0f/16384.0f), chassis_motor.getVelocityRads(1),
+                         motor_output_pre[1] * (20.0f/16384.0f), chassis_motor.getVelocityRads(2),
+                         motor_output_pre[2] * (20.0f/16384.0f), chassis_motor.getVelocityRads(3),
+                         motor_output_pre[3] * (20.0f/16384.0f), chassis_motor.getVelocityRads(4));
+
+                // CAN TX 状态监控：如果连续发送失败超过阈值，发出告警
+                uint32_t can_fail = chassis_motor.getSendFailCount();
+                if (can_fail > 100)
+                {
+                    LOG_ERROR("CAN TX FAIL: %lu consecutive send failures! Motors may stop.",
+                              can_fail);
+                }
+                else if (can_fail > 10)
+                {
+                    LOG_WARN("CAN TX intermittent: %lu consecutive send failures.",
+                             can_fail);
+                }
+
+                LOG_INFO("==================================");
+
+                rtt_log_cnt = 0;
+            }
+        }
+
         // 转发裁判系统枪管热量数据给云台 (英雄机器人: 仅42mm)
         gimbal_refree.send(
             ext_power_heat_data_0x0201.shooter_barrel_cooling_value,   // 枪管冷却值

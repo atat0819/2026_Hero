@@ -219,3 +219,10 @@ class Logger
 inline Logger *Logger::instance = nullptr;
 
 } // namespace HAL::LOGGER
+
+// ========== 便捷宏定义（与 README 文档一致） ==========
+#define LOG_TRACE(fmt, ...) HAL::LOGGER::Logger::getInstance().trace(fmt, ##__VA_ARGS__)
+#define LOG_INFO(fmt, ...)  HAL::LOGGER::Logger::getInstance().info(fmt, ##__VA_ARGS__)
+#define LOG_WARN(fmt, ...)  HAL::LOGGER::Logger::getInstance().warning(fmt, ##__VA_ARGS__)
+#define LOG_ERROR(fmt, ...) HAL::LOGGER::Logger::getInstance().error(fmt, ##__VA_ARGS__)
+#define LOG_FATAL(fmt, ...) HAL::LOGGER::Logger::getInstance().fatal(fmt, ##__VA_ARGS__)

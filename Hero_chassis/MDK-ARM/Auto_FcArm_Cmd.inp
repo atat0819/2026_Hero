@@ -11,5 +11,6 @@
 ..\user\core\HAL\UART\interface\uart_device.hpp,
 ..\user\core\HAL\UART\impl\uart_bus_impl.hpp,
 ..\user\core\HAL\UART\impl\uart_device_impl.hpp,
+..\user\core\HAL\LOGGER\logger.hpp,
 ..\fsm\chassis_fsm.hpp 
 TO Hero.hex RTE NOPRINT
