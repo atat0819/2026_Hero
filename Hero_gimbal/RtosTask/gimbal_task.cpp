@@ -126,6 +126,10 @@ feeder_fsm.Update(feeder_input, feeder_current_angle, feeder_speed, feeder_iq);
 leijia = feeder_fsm.Get_Accumulated_Angle();
 /********************************************************************************** */
 
+    // 跟踪控制类型变化，用于检测从其他模式切换到速度模式 (SPEED) 的时刻
+    static uint8_t prev_control_type = FEEDER_CONTROL_STOP;
+    uint8_t current_control_type = feeder_fsm.Get_Control_Type();
+
     if (force_stop)
 {
     // 强制停止：复位PID，跳过FSM输出，直接刹车
@@ -135,7 +139,7 @@ leijia = feeder_fsm.Get_Accumulated_Angle();
     feeder_speed_pid_speed.reset();
     feeder_out = 0.0f;
 }
-else if (feeder_fsm.Get_Control_Type() == FEEDER_CONTROL_ANGLE)
+else if (current_control_type == FEEDER_CONTROL_ANGLE)
 {
     feeder_target_speed = feeder_angle_pid.UpDate(
         feeder_fsm.Get_Control_Output(),
@@ -144,9 +148,16 @@ else if (feeder_fsm.Get_Control_Type() == FEEDER_CONTROL_ANGLE)
     feeder_out = feeder_speed_pid.UpDate(feeder_target_speed, feeder_speed);
 }
 
-else if (feeder_fsm.Get_Control_Type() == FEEDER_CONTROL_SPEED)
+else if (current_control_type == FEEDER_CONTROL_SPEED)
 {
-feeder_target_angle -= hz_to_rotor_angle_per_frame(3.0f);
+    // 刚切换到速度模式时，将目标角度同步为当前累积角度，防止从单发切换连发时
+    // feeder_target_angle 还停留在旧值，导致大位置误差 → 先反转再正转
+    if (prev_control_type != FEEDER_CONTROL_SPEED)
+    {
+        feeder_target_angle = feeder_fsm.Get_Accumulated_Angle();
+    }
+
+    feeder_target_angle -= hz_to_rotor_angle_per_frame(3.0f);
 
     feeder_target_speed = feeder_angle_pid_speed.UpDate(
         feeder_target_angle,
@@ -163,6 +174,8 @@ else
     feeder_speed_pid_speed.reset();
     feeder_out = 0.0f;
 }
+
+    prev_control_type = current_control_type;
 
 /********************************************************************************** */
 friction_fsm.Update(friction_input, friction_current_speed_left, friction_current_speed_right, friction_current_speed_above);
@@ -215,7 +228,7 @@ float hz_to_rotor_angle_per_frame(float fire_hz)
     const float angle_per_slot = 360.0f / slots_per_rotation; // 45 deg
     const float external_reduction = 2.75f;
     const float internal_reduction = 19.0f;
-    const float control_period = 0.002f;
+    const float control_period = 0.005f;  // 与 vTaskDelay(5) 一致
 
     return fire_hz * angle_per_slot * external_reduction * internal_reduction * control_period;
 }

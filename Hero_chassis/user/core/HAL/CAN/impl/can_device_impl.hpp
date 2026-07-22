@@ -16,6 +16,24 @@
 namespace HAL::CAN
 {
 
+struct CanTxDebug
+{
+    volatile uint32_t ok_count;
+    volatile uint32_t fail_count;
+    volatile uint32_t no_mailbox_count;
+    volatile uint32_t add_tx_fail_count;
+    volatile uint32_t last_hal_status;
+    volatile uint32_t last_hal_error;
+    volatile uint32_t last_esr;
+    volatile uint32_t last_tsr;
+    volatile uint32_t last_frame_id;
+    volatile uint32_t recover_count;
+    volatile uint8_t last_free_mailboxes;
+};
+
+extern CanTxDebug can1_tx_debug;
+extern CanTxDebug can2_tx_debug;
+
 // CAN硬件设备实现类
 class CanDevice : public ICanDevice
 {

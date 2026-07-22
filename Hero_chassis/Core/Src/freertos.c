@@ -108,7 +108,7 @@ void MX_FREERTOS_Init(void) {
 
   /* Create the thread(s) */
   /* creation of start_name */
- // start_nameHandle = osThreadNew(start, NULL, &start_name_attributes);
+  //start_nameHandle = osThreadNew(start, NULL, &start_name_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */

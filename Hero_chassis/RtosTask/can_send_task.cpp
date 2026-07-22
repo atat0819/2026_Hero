@@ -69,6 +69,37 @@ Communication::GimbalRefree gimbal_refree;
 const uint8_t chassis_motor_idxs[4] = {1, 2, 3, 4};
 BSP::Motor::Dji::GM3508<4> chassis_motor(0x200, chassis_motor_idxs, 0x200);
 
+extern "C" {
+typedef struct
+{
+    volatile uint32_t ok_count;
+    volatile uint32_t fail_count;
+    volatile uint32_t consecutive_fail_count;
+    volatile uint32_t last_fail_tick;
+    volatile uint8_t last_ok;
+} ChassisMotorCanTxWatch;
+
+volatile ChassisMotorCanTxWatch chassis_motor_can_tx_watch = {0, 0, 0, 0, 1};
+}
+
+static inline void ChassisMotorSendCANChecked()
+{
+    bool ok = chassis_motor.sendCAN();
+    chassis_motor_can_tx_watch.last_ok = ok ? 1 : 0;
+
+    if (ok)
+    {
+        chassis_motor_can_tx_watch.ok_count++;
+        chassis_motor_can_tx_watch.consecutive_fail_count = 0;
+    }
+    else
+    {
+        chassis_motor_can_tx_watch.fail_count++;
+        chassis_motor_can_tx_watch.consecutive_fail_count++;
+        chassis_motor_can_tx_watch.last_fail_tick = HAL_GetTick();
+    }
+}
+
 void ControlTask();
 void CAN1_RxCallback(HAL::CAN::Frame& frame);
 
@@ -86,10 +117,10 @@ LPFFilter acc_filter_z(0.2f);
 
 // 4 个电机，4 个 PID
 ALG::PID::PID motor_pid[4] = {
-    {130.0f, 0.0f, 0.0f, 16384.0f, 5000.0f, 500.0f},   //电机1 (扫频PID)
-	{130.0f, 0.0f, 0.0f, 16384.0f, 5000.0f, 500.0f},    //电机2
-	{130.0f, 0.0f, 0.0f, 16384.0f, 5000.0f, 500.0f},    //电机3
-	{130.0f, 0.0f, 0.0f, 16384.0f, 5000.0f, 500.0f}     //电机4	
+    {330.0f, 0.1f, 0.0f, 16384.0f, 5000.0f, 500.0f},   //电机1 (扫频PID)
+	{350.0f, 0.1f, 0.0f, 16384.0f, 5000.0f, 500.0f},    //电机2
+	{330.0f, 0.1f, 0.0f, 16384.0f, 5000.0f, 500.0f},    //电机3
+	{320.0f, 0.1f, 0.0f, 16384.0f, 5000.0f, 500.0f}     //电机4	
 };
 
 ALG::PID::PID test_pid = {0.0f, 0.0f, 0.0f, 10000.0f, 5000.0f, 500.0f};
@@ -245,7 +276,7 @@ for (int i = 0; i < 4; i++)
 {
     chassis_motor.setCAN((int16_t)0, i + 1);
 }
-chassis_motor.sendCAN();
+ChassisMotorSendCANChecked();
 
 // 在循环前声明
 Enum_Chassis_Mode last_mode = CHASSIS_STOP; //为了不疯车
@@ -256,21 +287,21 @@ osDelay(500);
     for (;;)
     {
          //获取底盘旋转速度
-        //  ChassisData.vx = remoteController.get_left_y()*Gain;
-        //  ChassisData.vy = remoteController.get_left_x()*Gain;
-        //  ChassisData.wz = remoteController.get_right_x() * c;
-        //  ChassisData.s1 = remoteController.get_s1();
-        //  ChassisData.s2 = remoteController.get_s2();
+         ChassisData.vx = remoteController.get_left_y()*Gain;
+         ChassisData.vy = remoteController.get_left_x()*Gain;
+         ChassisData.wz = remoteController.get_right_x() * c;
+         ChassisData.s1 = remoteController.get_s1();
+         ChassisData.s2 = remoteController.get_s2();
 
                  //获取底盘旋转速度
          //ChassisData.wz = remoteController.get_right_x() * c;
 
          // 测试模式：遥控器直接控制底盘，绕过云台CAN通信
-         gimbalChassis_communicate.vx = remoteController.get_left_y();
-         gimbalChassis_communicate.vy = remoteController.get_left_x();
-         gimbalChassis_communicate.s1 = remoteController.get_s1();
-         gimbalChassis_communicate.s2 = remoteController.get_s2();
-         yaw_offset_updated = true;  // 模拟云台在线，否则FSM强制STOP
+        //  gimbalChassis_communicate.vx = remoteController.get_left_y();
+        //  gimbalChassis_communicate.vy = remoteController.get_left_x();
+        //  gimbalChassis_communicate.s1 = remoteController.get_s1();
+        //  gimbalChassis_communicate.s2 = remoteController.get_s2();
+        //  yaw_offset_updated = true;  // 模拟云台在线，否则FSM强制STOP
 
 
          // 超级电容在线状态更新
@@ -286,7 +317,7 @@ osDelay(500);
         chassis_motor.setCAN((int16_t)0, i + 1);
         }
          chassis_fsm.Get_Follow_PID().reset();
-  chassis_motor.sendCAN();
+  ChassisMotorSendCANChecked();
   continue; // 跳过本次循环，直接进入下一次循环
     }
     else if (gimbalChassis_communicate.vx == -1 && gimbalChassis_communicate.vy == -1)
@@ -298,7 +329,7 @@ osDelay(500);
         chassis_motor.setCAN((int16_t)0, i + 1);
         }
          chassis_fsm.Get_Follow_PID().reset();
- chassis_motor.sendCAN();
+ ChassisMotorSendCANChecked();
   continue; // 跳过本次循环，直接进入下一次循环
     }
     else {
@@ -393,17 +424,17 @@ if (chassis_fsm.Get_Mode() != last_mode)
 }
 /**************************************************************** */
            // STOP 模式：直接清零，跳过后续控制，防疯车
-//if (chassis_fsm.Get_Mode() == CHASSIS_STOP)
-//{
-//    for (int i = 0; i < 4; i++)
-//    {
-//        motor_pid[i].reset();
-//        chassis_motor.setCAN((int16_t)0, i + 1);
-//    }
-//    chassis_motor.sendCAN();
-//osDelay(1);
-//    continue;
-//}
+if (chassis_fsm.Get_Mode() == CHASSIS_STOP)
+{
+    for (int i = 0; i < 4; i++)
+    {
+        motor_pid[i].reset();
+        chassis_motor.setCAN((int16_t)0, i + 1);
+    }
+    ChassisMotorSendCANChecked();
+osDelay(1);
+    continue;
+}
 /**************************************************************** */
         ik.OmniInvKinematics(vx_body, vy_body, wz_cmd, 0.0f, 1.0f, 1.0f);
         //ik.OmniInvKinematics(ChassisData.vx, ChassisData.vy, -ChassisData.wz, 0.0f, 1.0f, 1.0f);
@@ -504,7 +535,7 @@ if (chassis_fsm.Get_Mode() != last_mode)
 
  
 
- chassis_motor.sendCAN();
+ ChassisMotorSendCANChecked();
 
            
        //4. VOFA: pre_I, post_I, PowerTotal(预测), post_power(衰减后), PowerMax, eta*100

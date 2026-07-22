@@ -471,6 +471,96 @@
           <WinNumber>2</WinNumber>
           <ItemText>motor_target_speed</ItemText>
         </Ww>
+        <Ww>
+          <count>31</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>chassis_motor_can_tx_ok_count,0x0A</ItemText>
+        </Ww>
+        <Ww>
+          <count>32</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>chassis_motor_can_tx_fail_count,0x0A</ItemText>
+        </Ww>
+        <Ww>
+          <count>33</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>chassis_motor_can_tx_consecutive_fail_count,0x0A</ItemText>
+        </Ww>
+        <Ww>
+          <count>34</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>chassis_motor_can_tx_last_fail_tick,0x0A</ItemText>
+        </Ww>
+        <Ww>
+          <count>35</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>chassis_motor_can_tx_last_ok</ItemText>
+        </Ww>
+        <Ww>
+          <count>36</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>can1_tx_debug</ItemText>
+        </Ww>
+        <Ww>
+          <count>37</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>can1_tx_ok_count,0x0A</ItemText>
+        </Ww>
+        <Ww>
+          <count>38</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>can1_tx_fail_count,0x0A</ItemText>
+        </Ww>
+        <Ww>
+          <count>39</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>can1_tx_no_mailbox_count,0x0A</ItemText>
+        </Ww>
+        <Ww>
+          <count>40</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>can1_tx_add_tx_fail_count,0x0A</ItemText>
+        </Ww>
+        <Ww>
+          <count>41</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>can1_tx_last_hal_status,0x0A</ItemText>
+        </Ww>
+        <Ww>
+          <count>42</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>can1_tx_last_hal_error,0x0A</ItemText>
+        </Ww>
+        <Ww>
+          <count>43</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>can1_tx_last_esr,0x0A</ItemText>
+        </Ww>
+        <Ww>
+          <count>44</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>can1_tx_last_tsr,0x0A</ItemText>
+        </Ww>
+        <Ww>
+          <count>45</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>can1_tx_last_frame_id,0x0A</ItemText>
+        </Ww>
+        <Ww>
+          <count>46</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>can1_tx_last_free_mailboxes,0x0A</ItemText>
+        </Ww>
+        <Ww>
+          <count>47</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>can1_tx_watch,0x0A</ItemText>
+        </Ww>
+        <Ww>
+          <count>48</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>chassis_motor_can_tx_watch,0x0A</ItemText>
+        </Ww>
       </WatchWindow2>
       <Tracepoint>
         <THDelay>0</THDelay>
@@ -1462,7 +1552,7 @@
 
   <Group>
     <GroupName>HAL</GroupName>
-    <tvExp>0</tvExp>
+    <tvExp>1</tvExp>
     <tvExpOptDlg>0</tvExpOptDlg>
     <cbSel>0</cbSel>
     <RteFlg>0</RteFlg>

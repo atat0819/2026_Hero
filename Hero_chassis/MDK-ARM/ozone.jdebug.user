@@ -1,0 +1,28 @@
+
+
+OpenDocument="can_send_task.cpp", FilePath="C:/Users/hp/Desktop/2026_Hero/Hero_chassis/RtosTask/can_send_task.cpp", Line=0
+OpenDocument="DT7.cpp", FilePath="C:/Users/hp/Desktop/2026_Hero/Hero_chassis/user/core/BSP/RemoteControl/DT7.cpp", Line=0
+OpenDocument="startup_stm32f427xx.s", FilePath="C:/Users/hp/Desktop/2026_Hero/Hero_chassis/MDK-ARM/startup_stm32f427xx.s", Line=80
+OpenDocument="function.h", FilePath="D:/Keil5/Core/ARM/ARMCLANG/include/libcxx/__functional/function.h", Line=224
+OpenDocument="compressed_pair.h", FilePath="D:/Keil5/Core/ARM/ARMCLANG/include/libcxx/__memory/compressed_pair.h", Line=35
+OpenDocument="stm32f4xx_it.c", FilePath="C:/Users/hp/Desktop/2026_Hero/Hero_chassis/Core/Src/stm32f4xx_it.c", Line=89
+OpenDocument="main.c", FilePath="C:/Users/hp/Desktop/2026_Hero/Hero_chassis/Core/Src/main.c", Line=63
+OpenToolbar="File", Floating=0, x=0, y=0
+OpenToolbar="Debug", Floating=0, x=1, y=0
+OpenWindow="Registers 1", DockArea=RIGHT, x=0, y=0, w=220, h=1093, FilterBarShown=0, TotalValueBarShown=0, ToolBarShown=0, FilteredItems=[], RefreshRate=1
+OpenWindow="Source Files", DockArea=LEFT, x=0, y=0, w=293, h=593, FilterBarShown=0, TotalValueBarShown=0, ToolBarShown=0
+OpenWindow="Functions", DockArea=LEFT, x=0, y=2, w=293, h=191, FilterBarShown=0, TotalValueBarShown=0, ToolBarShown=0
+OpenWindow="Code Profile", DockArea=LEFT, x=0, y=1, w=293, h=307, FilterBarShown=0, TotalValueBarShown=0, ToolBarShown=0, GroupByFiles=0, SortRespectsFilters=0, ParentRelativeLoad=0
+OpenWindow="Data Sampling", DockArea=BOTTOM, x=0, y=0, w=384, h=328, FilterBarShown=0, TotalValueBarShown=0, ToolBarShown=0, VisibleTab=0, UniformSampleSpacing=0
+OpenWindow="Timeline", DockArea=BOTTOM, x=1, y=0, w=1517, h=328, FilterBarShown=0, TotalValueBarShown=0, ToolBarShown=1, DataPaneShown=1, PowerPaneShown=0, CodePaneShown=0, PinCursor="Cursor Movable", TimePerDiv="1 ns / Div", TimeStampFormat="Time", DataGraphDrawAsPoints=0, DataGraphLegendShown=1, DataGraphUniformSampleSpacing=0, DataGraphLegendPosition="1289;156", DataGraphShowNamesAtCursor=0, PowerGraphDrawAsPoints=0, PowerGraphLegendShown=0, PowerGraphAvgFilterTime=Off, PowerGraphAvgFilterLen=Off, PowerGraphUniformSampleSpacing=0, PowerGraphLegendPosition="1391;0", CodeGraphLegendShown=0, CodeGraphLegendPosition="1333;0"
+OpenWindow="Console", DockArea=BOTTOM, x=2, y=0, w=657, h=328, FilterBarShown=0, TotalValueBarShown=0, ToolBarShown=0
+SmartViewPlugin="", Page="", Toolbar="Hidden", Window="SmartView 1"
+TableHeader="Functions", SortCol="Name", SortOrder="ASCENDING", VisibleCols=["Name";"Address";"Size";"#Insts";"Class";"Source"], ColWidths=[674;104;100;100;27;446]
+TableHeader="Power Sampling", SortCol="None", SortOrder="ASCENDING", VisibleCols=["Index";"Time";"Ch 0"], ColWidths=[100;100;100]
+TableHeader="Registers 1", SortCol="Name", SortOrder="ASCENDING", VisibleCols=["Name";"Value";"Description"], ColWidths=[100;144;118]
+TableHeader="RegisterSelectionDialog", SortCol="None", SortOrder="ASCENDING", VisibleCols=[], ColWidths=[]
+TableHeader="TargetExceptionDialog", SortCol="Name", SortOrder="ASCENDING", VisibleCols=["Name";"Value";"Address";"Description"], ColWidths=[200;100;100;340]
+TableHeader="Code Profile", SortCol="File / Function", SortOrder="DESCENDING", VisibleCols=["File / Function";"Source Coverage";"Inst. Coverage";"Run Count";"Fetch Count";"Load"], ColWidths=[5407;158;174;110;126;104]
+TableHeader="Source Files", SortCol="File", SortOrder="ASCENDING", VisibleCols=["File";"Status";"Size";"#Insts";"Path"], ColWidths=[263;100;100;100;950]
+TableHeader="Data Sampling Table", SortCol="None", SortOrder="ASCENDING", VisibleCols=["Index";"Time"], ColWidths=[100;100]
+TableHeader="Data Sampling Setup", SortCol="Expression", SortOrder="ASCENDING", VisibleCols=["Expression";"Type";"Value";"Min";"Max";"Average";"# Changes";"Min. Change";"Max. Change"], ColWidths=[118;100;100;100;100;100;110;126;126]
