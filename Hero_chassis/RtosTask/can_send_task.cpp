@@ -535,7 +535,7 @@ osDelay(1);
 
  
 
- ChassisMotorSendCANChecked();
+ ChassisMotorSendCANChecked();  //就是将chassis_motor.sendCAN()打包成可以检查返回值的函数
 
            
        //4. VOFA: pre_I, post_I, PowerTotal(预测), post_power(衰减后), PowerMax, eta*100

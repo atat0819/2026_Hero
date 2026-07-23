@@ -27,16 +27,15 @@ typedef struct
     uint8_t temperature;  // 电机温度
     float multi_angle;    // 计算得到的多圈角度 (度)，需要在 ControlTask 中更新
 } DJI3508_State_t;
-extern DJI3508_State_t dji3508_state[4]; // 存储四个电机的状态数据
+extern DJI3508_State_t dji3508_state[3]; // 存储三个电机的状态数据
 
 
-extern BSP::Motor::Dji::GM3508<4> friction_motor; // 底盘电机控制器示例，初始ID为0x200，发送ID为0x2FF
+extern BSP::Motor::Dji::GM3508<3> friction_motor; // 电机控制器，初始ID为0x200，发送ID为0x2FF
 extern float feeder_current_angle; // 当前角度
 
 // 摩擦轮当前转速 (RPM)，供弹丸速度估算
 extern float friction_current_speed_left;
 extern float friction_current_speed_right;
-extern float friction_current_speed_above;
 
 
 

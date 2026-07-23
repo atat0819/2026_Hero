@@ -8,15 +8,13 @@ void Class_Friction_FSM::Init()
     Class_FSM::Init(FRICTION_STATUS_COUNT, FRICTION_STOP);
     left_control_output = 0.0f;
     right_control_output = 0.0f;
-    above_control_output = 0.0f;
     current_mode = FRICTION_MODE_STOP;
 }
 
-bool Class_Friction_FSM::Is_Speed_Ready(float left_speed, float right_speed, float above_speed) const
+bool Class_Friction_FSM::Is_Speed_Ready(float left_speed, float right_speed) const
 {
     return fabs(left_speed) >= READY_SPEED_THRESHOLD &&
-           fabs(right_speed) >= READY_SPEED_THRESHOLD &&
-           fabs(above_speed) >= READY_SPEED_THRESHOLD;
+           fabs(right_speed) >= READY_SPEED_THRESHOLD;
 }
 
 // ===== FSM 内部判断 friction_mode =====
@@ -43,7 +41,7 @@ static uint8_t DetermineFrictionMode(const struct Struct_Friction_Input &input)
 }
 
 void Class_Friction_FSM::Update(const Struct_Friction_Input &input,
-                                float left_speed, float right_speed, float above_speed)
+                                float left_speed, float right_speed)
 {
     current_mode = DetermineFrictionMode(input);
 
@@ -52,7 +50,6 @@ void Class_Friction_FSM::Update(const Struct_Friction_Input &input,
     case FRICTION_STOP:
         left_control_output = 0.0f;
         right_control_output = 0.0f;
-        above_control_output = 0.0f;
 
         if (current_mode == FRICTION_MODE_ON)
         {
@@ -63,13 +60,12 @@ void Class_Friction_FSM::Update(const Struct_Friction_Input &input,
     case FRICTION_STARTING:
         left_control_output = TARGET_SPEED;
         right_control_output = -TARGET_SPEED;
-        above_control_output = TARGET_SPEED;
 
         if (current_mode == FRICTION_MODE_STOP)
         {
             Set_Status(FRICTION_STOP);
         }
-        else if (Is_Speed_Ready(left_speed, right_speed, above_speed) &&
+        else if (Is_Speed_Ready(left_speed, right_speed) &&
                  Status[FRICTION_STARTING].Count_Time >= STARTING_TIME_COUNT)
         {
             Set_Status(FRICTION_READY);
@@ -79,13 +75,12 @@ void Class_Friction_FSM::Update(const Struct_Friction_Input &input,
     case FRICTION_READY:
         left_control_output = TARGET_SPEED;
         right_control_output = -TARGET_SPEED;
-        above_control_output = TARGET_SPEED;
 
         if (current_mode == FRICTION_MODE_STOP)
         {
             Set_Status(FRICTION_STOP);
         }
-        else if (!Is_Speed_Ready(left_speed, right_speed, above_speed))
+        else if (!Is_Speed_Ready(left_speed, right_speed))
         {
             Set_Status(FRICTION_STARTING);
         }
@@ -94,7 +89,6 @@ void Class_Friction_FSM::Update(const Struct_Friction_Input &input,
     default:
         left_control_output = 0.0f;
         right_control_output = 0.0f;
-        above_control_output = 0.0f;
         Set_Status(FRICTION_STOP);
         break;
     }
@@ -108,11 +102,6 @@ float Class_Friction_FSM::Get_Left_Control_Output()
 float Class_Friction_FSM::Get_Right_Control_Output()
 {
     return right_control_output;
-}
-
-float Class_Friction_FSM::Get_Above_Control_Output()
-{
-    return above_control_output;
 }
 
 uint8_t Class_Friction_FSM::Is_Ready()

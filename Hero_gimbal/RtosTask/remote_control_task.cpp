@@ -221,13 +221,12 @@ extern "C" void remote_control_task(void *argument)
 
             float quaternion[4] = {imu.GetQuaternion(0), imu.GetQuaternion(1), imu.GetQuaternion(2), imu.GetQuaternion(3)};
 
-            // 弹丸预估初速度：取3个摩擦轮转速的绝对值平均值，换算为线速度
+            // 弹丸预估初速度：取2个摩擦轮转速的绝对值平均值，换算为线速度
             // v (m/s) = RPM × π × d / 60,  d = 64.1mm
             // 右侧摩擦轮反向旋转，取绝对值后参与平均
             float abs_left  = friction_current_speed_left  < 0.0f ? -friction_current_speed_left  : friction_current_speed_left;
             float abs_right = friction_current_speed_right < 0.0f ? -friction_current_speed_right : friction_current_speed_right;
-            float abs_above = friction_current_speed_above < 0.0f ? -friction_current_speed_above : friction_current_speed_above;
-            float avg_friction_rpm = (abs_left + abs_right + abs_above) / 3.0f;
+            float avg_friction_rpm = (abs_left + abs_right) / 2.0f;
             float bullet_speed = avg_friction_rpm * 3.14159265358979323846f * 0.0641f / 60.0f;
 
             vision_comm.SendToVision(quaternion, bullet_speed, BSP::Vision::VisionCommunicator::ENEMY_RED, vision_mode);

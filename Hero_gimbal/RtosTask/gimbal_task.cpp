@@ -5,15 +5,15 @@
 #include "remote_control_task.hpp"
 #include "../communication_between_boards/input_dispatcher.hpp"
 
-const uint8_t chassis_motor_idxs[4] = {1, 2, 3, 4}; // 4 个电机的接收偏移 ID
-BSP::Motor::Dji::GM3508<4> friction_motor(0x200, chassis_motor_idxs, 0x200); // 底盘电机控制器示例，初始ID为0x200，发送ID为0x2FF
+const uint8_t chassis_motor_idxs[3] = {1, 2, 3}; // 3 个电机的接收偏移 ID
+BSP::Motor::Dji::GM3508<3> friction_motor(0x200, chassis_motor_idxs, 0x200); // 电机控制器，初始ID为0x200，发送ID为0x2FF
 
 using Remote = BSP::REMOTE_CONTROL::RemoteController;
 extern InputDispatcher input_dispatcher;
 
-DJI3508_State_t dji3508_state[4]; // 存储四个电机的状态数据
+DJI3508_State_t dji3508_state[3]; // 存储三个电机的状态数据
 
-//1 号电机是拨弹轮，2、3、4 号电机是左右和上方摩擦轮
+//1 号电机是拨弹轮，2、3 号电机是左右摩擦轮
 float feeder_target_angle = 0.0f; // 来自pid计算的目标角度
 float feeder_current_angle = 0.0f; // 当前角度
 float feeder_speed = 0.0f; // 当前速度
@@ -23,11 +23,9 @@ float feeder_out = 0.0f; // 最终控制输出
 
 float friction_current_speed_left = 0.0f; // 当前速度
 float friction_current_speed_right = 0.0f; // 当前速度
-float friction_current_speed_above = 0.0f; // 当前速度
 
 float left_out = 0.0f; // 左侧摩擦轮控制输出
 float right_out = 0.0f; // 右侧摩擦轮控制输出
-float above_out = 0.0f; // 上方摩擦轮控制输出
 
 // 在 gimbal_task 外部或循环上方定义
 float last_gimbal_roll = 0.0f; // 用于边缘触发检测的上一次滚轮值
@@ -48,7 +46,6 @@ ALG::PID::PID feeder_stop_pid(0.0f, 0.00f, 0.0f, 20000.0f, 1000.0f, 100.0f);
 ALG::PID::PID feeder_speed_pid_speed(1.0f, 0.00f, 0.0f, 5000.0f, 1000.0f, 100.0f);
 ALG::PID::PID left_friction_pid(8.0f, 0.00f, 0.0f, 16384.0f, 1000.0f, 100.0f);
 ALG::PID::PID right_friction_pid(8.0f, 0.00f, 0.0f, 16384.0f, 1000.0f, 100.0f);
-ALG::PID::PID above_friction_pid(8.0f, 0.00f, 0.0f, 16384.0f, 1000.0f, 100.0f);
 
 
 float leijia = 0;
@@ -120,7 +117,6 @@ last_gimbal_roll = RemoteData.gimbal_roll;
     
     friction_current_speed_left = dji3508_state[1].velocity_rpm; // 左侧摩擦轮当前速度
     friction_current_speed_right = dji3508_state[2].velocity_rpm; // 右侧摩擦轮当前速度
-    friction_current_speed_above = dji3508_state[3].velocity_rpm; // 上方摩擦轮当前速度
 
 feeder_fsm.Update(feeder_input, feeder_current_angle, feeder_speed, feeder_iq);
 leijia = feeder_fsm.Get_Accumulated_Angle();
@@ -178,7 +174,7 @@ else
     prev_control_type = current_control_type;
 
 /********************************************************************************** */
-friction_fsm.Update(friction_input, friction_current_speed_left, friction_current_speed_right, friction_current_speed_above);
+friction_fsm.Update(friction_input, friction_current_speed_left, friction_current_speed_right);
 
  left_out = left_friction_pid.UpDate(
     friction_fsm.Get_Left_Control_Output(),
@@ -187,15 +183,10 @@ friction_fsm.Update(friction_input, friction_current_speed_left, friction_curren
  right_out = right_friction_pid.UpDate(
     friction_fsm.Get_Right_Control_Output(),
     friction_current_speed_right);
-
- above_out = above_friction_pid.UpDate(
-    friction_fsm.Get_Above_Control_Output(),
-    friction_current_speed_above);
 /********************************************************************************** */
 	friction_motor.setCAN((int16_t)feeder_out, 1);
 friction_motor.setCAN((int16_t)left_out, 2);
 friction_motor.setCAN((int16_t)right_out, 3);
-friction_motor.setCAN((int16_t)above_out, 4);
 
 friction_motor.sendCAN();
 /**************************************************************************** */
@@ -207,7 +198,7 @@ vTaskDelay(5); // 每5ms执行一次控制循环
 
 
 void DJI3508_feedback() {
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 3; i++) {
         uint8_t motor_id = i + 1; // 电机逻辑 ID 通常从 1 开始
          dji3508_state[i].multi_angle = friction_motor.getAddAngleDeg(motor_id) ; // 获取多圈角度，单位为度
         dji3508_state[i].angle_deg   = friction_motor.getAngleDeg(motor_id); // 如果拨弹轮也是19:1减速比，则同样除以19

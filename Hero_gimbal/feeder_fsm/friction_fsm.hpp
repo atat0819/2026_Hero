@@ -39,23 +39,19 @@ public:
     /// @brief 新接口：FSM 内部根据输入判断 ON/OFF
     void Update(const Struct_Friction_Input &input,
                 float left_speed,
-                float right_speed,
-                float above_speed); 
+                float right_speed);
 
     float Get_Left_Control_Output();
     float Get_Right_Control_Output();
-    float Get_Above_Control_Output();
 
     uint8_t Is_Ready();
 
 private:
-    // 修改：确保这里的声明与 cpp 文件一致（增加 above_speed）
-    bool Is_Speed_Ready(float left_speed, float right_speed, float above_speed) const;
+    bool Is_Speed_Ready(float left_speed, float right_speed) const;
 
 private:
     float left_control_output = 0.0f;
     float right_control_output = 0.0f;
-    float above_control_output = 0.0f; // 确保这个变量已存在
 
     uint8_t current_mode = FRICTION_MODE_STOP;
 
