@@ -27,6 +27,9 @@ void Class_Gimbal_FSM::Init(const Struct_Gimbal_FSM_Config &__config,
     angle_target_initialized = 0U;
     mode_changed_flag = 0U;
 
+    vision_slope_.SetIncreaseValue(config.vision_slope_inc);
+    vision_slope_.SetDecreaseValue(config.vision_slope_dec);
+
     if (__initial_status == GIMBAL_STATUS_ANGLE)
     {
         control_type = GIMBAL_CONTROL_ANGLE;
@@ -178,17 +181,32 @@ void Class_Gimbal_FSM::Update(const Struct_Gimbal_Input &input, float current_an
         if (mode_changed_flag == 0U)
         {
             float desired_angle = Apply_Angle_Rule(angle_input);
-            if (config.slew_rate_max > 0.0f)
+            if (config.vision_slope_inc > 0.0f || config.vision_slope_dec > 0.0f)
             {
-                float diff = desired_angle - target_angle;
-                while (diff > 180.0f)  diff -= FULL_CIRCLE_DEG;
-                while (diff < -180.0f) diff += FULL_CIRCLE_DEG;
-                if (diff > config.slew_rate_max)
-                    diff = config.slew_rate_max;
-                else if (diff < -config.slew_rate_max)
-                    diff = -config.slew_rate_max;
-                target_angle += diff;
-                target_angle = Apply_Angle_Rule(target_angle);
+                float now_planning = vision_slope_.GetNowPlanning();
+
+                // yaw 轴角度环绕处理：将 target 和 feedback 展开到与 Now_Planning
+                // 相同的"圈数"参考系，保证 SlopePlanning 内部数值比较正确
+                if (config.normalize_angle != 0U)
+                {
+                    float diff_t = desired_angle - now_planning;
+                    while (diff_t > 180.0f)  { desired_angle -= FULL_CIRCLE_DEG; diff_t -= FULL_CIRCLE_DEG; }
+                    while (diff_t < -180.0f) { desired_angle += FULL_CIRCLE_DEG; diff_t += FULL_CIRCLE_DEG; }
+
+                    float diff_f = current_angle - now_planning;
+                    while (diff_f > 180.0f)  { current_angle -= FULL_CIRCLE_DEG; diff_f -= FULL_CIRCLE_DEG; }
+                    while (diff_f < -180.0f) { current_angle += FULL_CIRCLE_DEG; diff_f += FULL_CIRCLE_DEG; }
+                }
+
+                vision_slope_.TIM_Calculate_PeriodElapsedCallback(desired_angle, current_angle);
+                target_angle = Apply_Angle_Rule(vision_slope_.GetOut());
+
+                // yaw 轴归一化后同步 Now_Planning，防止长期运行后漂移出合理范围，
+                // 导致 unwrap 展开的目标角度与物理实际方向偏差过大
+                if (config.normalize_angle != 0U)
+                {
+                    vision_slope_.SetNowPlanning(target_angle);
+                }
             }
             else
             {
@@ -226,6 +244,7 @@ void Class_Gimbal_FSM::ReAnchor(float new_angle)
     target_speed = 0.0f;
     angle_target_initialized = 1U;
     mode_changed_flag = 1U;
+    vision_slope_.Reset(new_angle);
 }
 
 float Class_Gimbal_FSM::Get_Control_Output() const
@@ -285,6 +304,7 @@ void Class_Gimbal_FSM::Enter_Vision_State(float current_angle)
     control_output = target_angle;
     control_type = GIMBAL_CONTROL_ANGLE;
     angle_target_initialized = 1U;
+    vision_slope_.Reset(current_angle);
 }
 
 float Class_Gimbal_FSM::Apply_Angle_Rule(float angle) const

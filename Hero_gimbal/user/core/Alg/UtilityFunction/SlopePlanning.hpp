@@ -18,6 +18,8 @@ namespace Alg::Utility
              * @param increaseValue 上升斜率，每个计算周期允许的最大增加量
              * @param decreaseValue 下降斜率，每个计算周期允许的最大减少量（正值）
              */
+            SlopePlanning() : Increase_Value(0.0f), Decrease_Value(0.0f) {}
+
             SlopePlanning(float increaseValue, float decreaseValue)
                 : Increase_Value(increaseValue), Decrease_Value(decreaseValue) {}
 
@@ -48,7 +50,24 @@ namespace Alg::Utility
              * @param decreaseValue 每个计算周期允许的最大减少量（正值）
              */
             void SetDecreaseValue(float decreaseValue) { Decrease_Value = decreaseValue; }
-            
+
+            /**
+             * @brief 直接设置当前规划值（用于角度归一化等场景）
+             * @param value 新的规划值
+             */
+            void SetNowPlanning(float value) { Now_Planning = value; }
+
+            /**
+             * @brief 复位规划器内部状态到指定值
+             * @param initial_value 初始值，同时设置 Now_Planning / Out / Now_Real
+             */
+            void Reset(float initial_value)
+            {
+                Now_Planning = initial_value;
+                Out = initial_value;
+                Now_Real = initial_value;
+            }
+
             /**
              * @brief 设定目标值
              * @param target 期望达到的目标值

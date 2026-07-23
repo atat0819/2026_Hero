@@ -159,7 +159,8 @@ yaw_gimbal_fsm_config.min_angle = 0.0f;
 yaw_gimbal_fsm_config.max_angle = 0.0f;
 yaw_gimbal_fsm_config.limit_angle = 0U;
 yaw_gimbal_fsm_config.normalize_angle = 1U;
-yaw_gimbal_fsm_config.slew_rate_max = 0.5f;   // 视觉模式 yaw 限幅 0.5°/tick
+yaw_gimbal_fsm_config.vision_slope_inc = 0.5f;   // 视觉 yaw 加速斜率
+	yaw_gimbal_fsm_config.vision_slope_dec = 0.5f;   // 视觉 yaw 减速斜率
 yaw_gimbal_fsm.Init(yaw_gimbal_fsm_config, GIMBAL_STATUS_STOP);
 
 pitch_gimbal_fsm_config.angle_step = 0.15f;
@@ -169,7 +170,8 @@ pitch_gimbal_fsm_config.min_angle = -19.0f;   // IMU pitch 最低点
 pitch_gimbal_fsm_config.max_angle = 40.0f;    // IMU pitch 最高点
 pitch_gimbal_fsm_config.limit_angle = 1U;
 pitch_gimbal_fsm_config.normalize_angle = 0U;
-pitch_gimbal_fsm_config.slew_rate_max = 0.3f;   // 视觉模式 pitch 限幅 0.3°/tick
+pitch_gimbal_fsm_config.vision_slope_inc = 0.3f;   // 视觉 pitch 加速斜率
+	pitch_gimbal_fsm_config.vision_slope_dec = 0.3f;   // 视觉 pitch 减速斜率
 pitch_gimbal_fsm.Init(pitch_gimbal_fsm_config, GIMBAL_STATUS_STOP);
 /************************************************************************************* */
 
@@ -443,6 +445,8 @@ if (yaw_gimbal_fsm.Take_Mode_Changed_Flag() != 0U)
     yaw_version_angle_pid.reset();
     yaw_version_speed_pid.reset();
     yaw_vel_ff.VelocityFeedforward(yaw_target_angle); // 模式切换时预载目标角度，避免突变
+    yaw_angle_ff.ResetState(yaw_current_speed);       // 预载当前速度，防止加速度差分尖峰
+    yaw_vision_ff.ResetState(yaw_current_speed);      // 预载当前速度，防止加速度差分尖峰
 }
 
 if (pitch_gimbal_fsm.Take_Mode_Changed_Flag() != 0U)
@@ -452,6 +456,8 @@ if (pitch_gimbal_fsm.Take_Mode_Changed_Flag() != 0U)
     pitch_single_speed_pid.reset();
     pitch_version_angle_pid.reset();
     pitch_version_speed_pid.reset();
+    pitch_angle_ff.ResetState(pitch_current_speed);     // 预载当前速度，防止加速度差分尖峰
+    pitch_vision_ff.ResetState(pitch_current_speed);    // 预载当前速度，防止加速度差分尖峰
 }
 
 yaw_target_angle = yaw_gimbal_fsm.Get_Target_Angle();

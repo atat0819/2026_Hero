@@ -467,6 +467,19 @@ namespace Alg::Feedforward
              */
             void setKJ(float kJ) { k_J = kJ; }
 
+            /**
+             * @brief 模式切换时复位内部状态，防止差分尖峰
+             * @param current_ref_velocity 当前期望速度(RPM)，用于同步 last_ref_velocity
+             */
+            void ResetState(float current_ref_velocity)
+            {
+                last_ref_velocity = current_ref_velocity;
+                filtered_acc = 0.0f;
+                acc_feedforward = 0.0f;
+                friction = 0.0f;
+                torque = 0.0f;
+            }
+
         private:
             float k_J;                // 转动惯量前馈系数
             float control_dt;         // 控制周期(s)
