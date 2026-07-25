@@ -32,7 +32,7 @@ float YawOffset_GetDeg(void)
     while (yaw_offset_deg > 180.0f)  yaw_offset_deg -= 360.0f;
     while (yaw_offset_deg < -180.0f) yaw_offset_deg += 360.0f;
 
-    return yaw_offset_deg - 18;   //18是电机上电时yaw角的偏值，目的是为了底盘对准云台正方向
+    return yaw_offset_deg + 160.405;   //18是电机上电时yaw角的偏值，目的是为了底盘对准云台正方向
 }
 
 

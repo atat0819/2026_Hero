@@ -311,7 +311,7 @@ float Class_Gimbal_FSM::Apply_Angle_Rule(float angle) const
 {
     float result = angle;
 
-    if (config.normalize_angle != 0U)
+    if (config.normalize_angle != 0U && config.continuous_angle == 0U)
     {
         while (result >= 180.0f)
         {

@@ -12,6 +12,52 @@
 #include "../communication_between_boards/input_dispatcher.hpp"
 #include "../user/core/Alg/Feedforward/Feedforward.hpp"
 
+namespace
+{
+constexpr float YAW_HALF_CIRCLE_DEG = 180.0f;
+constexpr float YAW_FULL_CIRCLE_DEG = 360.0f;
+constexpr float YAW_MAX_UNWRAP_STEP_DEG = 45.0f;
+
+float AbsFloat(float value)
+{
+    return (value >= 0.0f) ? value : -value;
+}
+
+float GetContinuousYawAngle(float raw_yaw, bool force_reset = false)
+{
+    static bool initialized = false;
+    static float last_raw_yaw = 0.0f;
+    static float continuous_yaw = 0.0f;
+
+    if (!initialized || force_reset)
+    {
+        initialized = true;
+        last_raw_yaw = raw_yaw;
+        continuous_yaw = raw_yaw;
+        return continuous_yaw;
+    }
+
+    float delta = raw_yaw - last_raw_yaw;
+    while (delta > YAW_HALF_CIRCLE_DEG)
+    {
+        delta -= YAW_FULL_CIRCLE_DEG;
+    }
+    while (delta < -YAW_HALF_CIRCLE_DEG)
+    {
+        delta += YAW_FULL_CIRCLE_DEG;
+    }
+
+    if (AbsFloat(delta) > YAW_MAX_UNWRAP_STEP_DEG)
+    {
+        return continuous_yaw;
+    }
+
+    continuous_yaw += delta;
+    last_raw_yaw = raw_yaw;
+    return continuous_yaw;
+}
+}
+
 
 uint8_t txDataBuffer[8], rxDataBuffer0[8], rxDataBuffer1[8];
 CAN_TxHeaderTypeDef txHeader;
@@ -19,24 +65,24 @@ CAN_RxHeaderTypeDef rxHeader0, rxHeader1;
 
 /******************************************************************************** */
 // yaw轴角度环外环PID
-ALG::PID::PID yaw_angle_pid(0.0f, 0.0f, 0.0f, 5000.0f, 1000.0f, 100.0f);
+ALG::PID::PID yaw_angle_pid(8.2f, 0.0f, 0.0f, 5000.0f, 1000.0f, 100.0f);
 // yaw轴角度环内环PID
-ALG::PID::PID yaw_angle_to_speed_pid(0.0f, 0.0f, 0.0f, 5000.0f, 1000.0f, 100.0f);
+ALG::PID::PID yaw_angle_to_speed_pid(2.7f, 0.04f, 0.0f, 5000.0f, 1000.0f, 100.0f);
 // yaw轴速度前馈（k_vel 需根据实际响应调参，dt=0.001 对应 1kHz 控制周期）
 Alg::Feedforward::Velocity yaw_vel_ff(0.0f, 0.001f);
 // 普通角度环前馈：摩擦+惯量全补偿（kJ, dt, viscous, coulomb）
-Alg::Feedforward::GimbalFullCompensation yaw_angle_ff(0.0f, 0.001f, 0.0f, 0.0f);
-Alg::Feedforward::GimbalFullCompensation pitch_angle_ff(0.0f, 0.001f, 0.0f, 0.0f);
+Alg::Feedforward::GimbalFullCompensation yaw_angle_ff(0.0f, 0.001f, 0.1f, 15.0f);
+Alg::Feedforward::GimbalFullCompensation pitch_angle_ff(0.001f, 0.001f, 0.18f, 18.0f);
 //pitch轴角度环外环PID
-ALG::PID::PID pitch_angle_pid(0.0f, 0.0f, 0.0f, 5000.0f, 1000.0f, 100.0f);
+ALG::PID::PID pitch_angle_pid(8.3f, 0.0f, 0.0f, 5000.0f, 1000.0f, 100.0f);
 // pitch轴角度环内环PID
-ALG::PID::PID pitch_angle_to_speed_pid(0.0f, 0.0f, 0.0f, 5000.0f, 1000.0f, 100.0f);
+ALG::PID::PID pitch_angle_to_speed_pid(4.7f, 0.02f, 0.0f, 5000.0f, 1000.0f, 100.0f);
 /********************************************************************************** */
 
 //yaw轴单速度环PID
-ALG::PID::PID yaw_single_speed_pid(0.0f, 0.0f, 0.0f, 5000.0f, 1000.0f, 100.0f);
+ALG::PID::PID yaw_single_speed_pid(3.5f, 0.05f, 0.0f, 5000.0f, 1000.0f, 100.0f);
 //pitch轴单速度环PID
-ALG::PID::PID pitch_single_speed_pid(0.0f, 0.0f, 0.0f, 5000.0f, 1000.0f, 100.0f);
+ALG::PID::PID pitch_single_speed_pid(4.5f, 0.07f, 0.0f, 5000.0f, 1000.0f, 100.0f);
 
 /*********************************************************************** */
 /*********************************************************************** */
@@ -153,23 +199,25 @@ extern "C" void can_send_task(void *argument)
 
 /*********************************************************************************** */
 yaw_gimbal_fsm_config.angle_step = 0.20f;
-yaw_gimbal_fsm_config.speed_scale = 80.0f;
+yaw_gimbal_fsm_config.speed_scale = 110.0f;
 yaw_gimbal_fsm_config.mouse_speed_scale = 0.2f;   // 键鼠 yaw 手感 (°/s per pixel)
 yaw_gimbal_fsm_config.min_angle = 0.0f;
 yaw_gimbal_fsm_config.max_angle = 0.0f;
 yaw_gimbal_fsm_config.limit_angle = 0U;
 yaw_gimbal_fsm_config.normalize_angle = 1U;
+yaw_gimbal_fsm_config.continuous_angle = 1U;
 yaw_gimbal_fsm_config.vision_slope_inc = 0.5f;   // 视觉 yaw 加速斜率
 	yaw_gimbal_fsm_config.vision_slope_dec = 0.5f;   // 视觉 yaw 减速斜率
 yaw_gimbal_fsm.Init(yaw_gimbal_fsm_config, GIMBAL_STATUS_STOP);
 
 pitch_gimbal_fsm_config.angle_step = 0.15f;
-pitch_gimbal_fsm_config.speed_scale = 80.0f;
+pitch_gimbal_fsm_config.speed_scale = 95.0f;
 pitch_gimbal_fsm_config.mouse_speed_scale = 0.2f;   // 键鼠 pitch 手感 (°/s per pixel)
-pitch_gimbal_fsm_config.min_angle = -19.0f;   // IMU pitch 最低点
-pitch_gimbal_fsm_config.max_angle = 40.0f;    // IMU pitch 最高点
+pitch_gimbal_fsm_config.min_angle = -18.75f;   // IMU pitch 最低点
+pitch_gimbal_fsm_config.max_angle = 23.9f;    // IMU pitch 最高点
 pitch_gimbal_fsm_config.limit_angle = 1U;
 pitch_gimbal_fsm_config.normalize_angle = 0U;
+pitch_gimbal_fsm_config.continuous_angle = 0U;
 pitch_gimbal_fsm_config.vision_slope_inc = 0.3f;   // 视觉 pitch 加速斜率
 	pitch_gimbal_fsm_config.vision_slope_dec = 0.3f;   // 视觉 pitch 减速斜率
 pitch_gimbal_fsm.Init(pitch_gimbal_fsm_config, GIMBAL_STATUS_STOP);
@@ -231,7 +279,7 @@ for (uint32_t wait = 0; wait < 200; wait++)
 ControlTask();
 
 // 设置初始目标（此时IMU也收敛了）
-ImuData_user.yaw = imu.GetAngle(2);
+ImuData_user.yaw = GetContinuousYawAngle(imu.GetAngle(2), true);
 ImuData_user.pitch = imu.GetAngle(1);
 yaw_target_angle = ImuData_user.yaw;   // 目标=当前，偏差为0
 pitch_target_angle = ImuData_user.pitch; // pitch 用 IMU 闭环
@@ -275,7 +323,7 @@ for (uint32_t i = 0; i < 1000; i++)
 }
 
 // 用收敛后的 IMU 重新校准初始目标角度
-ImuData_user.yaw = imu.GetAngle(2);
+ImuData_user.yaw = GetContinuousYawAngle(imu.GetAngle(2), true);
 ImuData_user.pitch = imu.GetAngle(1);
 yaw_target_angle = ImuData_user.yaw;
 pitch_target_angle = ImuData_user.pitch;
@@ -336,9 +384,9 @@ pitch_target_angle = ImuData_user.pitch;
             RemoteData.mouse_right != 0
         );
 
-ImuData_user.yaw = imu.GetAngle(2); // 使用偏移和滤波后的角度进行控制，保证连续性
+ImuData_user.yaw = GetContinuousYawAngle(imu.GetAngle(2)); // continuous yaw feedback
 ImuData_user.pitch = imu.GetAngle(1); // pitch 角度，视觉模式闭环用
-ImuData_user.gyro_y = imu.GetGyro(1); // pitch 角速度，视觉模式闭环用
+ImuData_user.gyro_y = imu.GetGyro(0); // pitch 角速度，视觉模式闭环用
 ImuData_user.gyro_z = imu.GetGyro(2); // 使用原始陀螺仪数据进行滤波，保持控制响应的及时性
 
 
@@ -444,7 +492,7 @@ if (yaw_gimbal_fsm.Take_Mode_Changed_Flag() != 0U)
     yaw_single_speed_pid.reset();
     yaw_version_angle_pid.reset();
     yaw_version_speed_pid.reset();
-    yaw_vel_ff.VelocityFeedforward(yaw_target_angle); // 模式切换时预载目标角度，避免突变
+    yaw_vel_ff.VelocityFeedforward(yaw_gimbal_fsm.Get_Target_Angle()); // 模式切换时预载目标角度，避免突变
     yaw_angle_ff.ResetState(yaw_current_speed);       // 预载当前速度，防止加速度差分尖峰
     yaw_vision_ff.ResetState(yaw_current_speed);      // 预载当前速度，防止加速度差分尖峰
 }
@@ -464,8 +512,6 @@ yaw_target_angle = yaw_gimbal_fsm.Get_Target_Angle();
 pitch_target_angle = pitch_gimbal_fsm.Get_Target_Angle();
 
 yaw_error = yaw_target_angle - yaw_current_angle;
-while (yaw_error > 180.0f)  yaw_error -= 360.0f;
-while (yaw_error < -180.0f) yaw_error += 360.0f;
 
 pitch_error = pitch_target_angle - pitch_current_angle;
 while (pitch_error > 180.0f)  pitch_error -= 360.0f;
@@ -605,8 +651,8 @@ else if (pitch_gimbal_fsm.Get_Control_Type() == GIMBAL_CONTROL_SPEED || imu_faul
 
            gimbal_motor.ctrl_Torque(2, 2, (int16_t)yaw_control_output);   // yaw   → CAN1
             gimbal_motor.ctrl_Torque(1, 1, (int16_t)pitch_control_output); // pitch → CAN2
-         vofa_send(yaw_target_angle,yaw_current_angle,
-                   yaw_target_speed,yaw_current_speed,
+         vofa_send(pitch_target_angle,pitch_current_angle,
+                   pitch_target_speed,pitch_current_speed,
                    pitch_target_speed,pitch_current_speed); // 发送数据到VOFA
 
          }
@@ -704,7 +750,7 @@ static bool IMU_Fault_Protection(float &yaw_angle, float &yaw_speed,
     static constexpr float RADS_TO_DEGPS = 57.29578f;     // rad/s → °/s  (180 / PI)
 
     bool imu_all_zero = (imu.GetAngle(2) == 0.0f && imu.GetAngle(1) == 0.0f &&
-                         imu.GetGyro(2) == 0.0f && imu.GetGyro(1) == 0.0f);
+                         imu.GetGyro(2) == 0.0f && imu.GetGyro(0) == 0.0f);
     bool imu_lost = (!imu.isConnected());
 
     if (imu_all_zero || imu_lost)

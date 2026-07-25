@@ -859,6 +859,21 @@
               <FileType>8</FileType>
               <FilePath>..\user\core\Alg\Filter\Filter.cpp</FilePath>
             </File>
+            <File>
+              <FileName>drv_math.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\user\core\Alg\UtilityFunction\drv_math.h</FilePath>
+            </File>
+            <File>
+              <FileName>SlopePlanning.hpp</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\user\core\Alg\UtilityFunction\SlopePlanning.hpp</FilePath>
+            </File>
+            <File>
+              <FileName>SlopPlanning.cpp</FileName>
+              <FileType>8</FileType>
+              <FilePath>..\user\core\Alg\UtilityFunction\SlopPlanning.cpp</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

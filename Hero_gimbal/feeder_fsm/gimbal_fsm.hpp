@@ -38,6 +38,7 @@ typedef struct Struct_Gimbal_FSM_Config
     float max_angle = 0.0f;
     uint8_t limit_angle = 0U;
     uint8_t normalize_angle = 0U;
+    uint8_t continuous_angle = 0U;
     float vision_slope_inc = 0.0f;      // 视觉模式：每个周期允许的最大增加量
     float vision_slope_dec = 0.0f;      // 视觉模式：每个周期允许的最大减少量
 };
