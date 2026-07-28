@@ -29,6 +29,7 @@ void Class_Feeder_FSM::Init()
     accumulated_angle            = 0.0f;
     single_shot_target_angle     = 0.0f;
     manual_reverse_target_angle  = 0.0f;
+    single_shot_phase_correction = 0.0f;
     last_trigger_pressed         = 0;
     current_mode                 = FEEDER_MODE_STOP;
     current_trigger_pressed      = 0;
@@ -41,32 +42,21 @@ void Class_Feeder_FSM::Init()
 }
 
 // ============================================================================
-// 累积角度更新 — 首帧初始化 + 跨圈修正
+// 多圈角度更新 — 电机驱动层已完成跨圈累计
 // ============================================================================
 void Class_Feeder_FSM::Update_Accumulated_Angle(float feeder_current_angle)
 {
-    if (angle_initialized == 0U)
-    {
-        raw_angle         = feeder_current_angle;
-        accumulated_angle = feeder_current_angle;
-        angle_initialized = 1;
-        return;
-    }
-
-    float delta_angle = feeder_current_angle - raw_angle;
-
-    if (delta_angle > ANGLE_WRAP_THRESHOLD)
-    {
-        delta_angle -= FULL_ROTATION_ANGLE;
-    }
-    else if (delta_angle < -ANGLE_WRAP_THRESHOLD)
-    {
-        delta_angle += FULL_ROTATION_ANGLE;
-    }
-
-    raw_angle = feeder_current_angle;
-    accumulated_angle += delta_angle;
+    raw_angle         = feeder_current_angle;
+    accumulated_angle = feeder_current_angle;
+    angle_initialized = 1;
 }
+
+// ROLLBACK_MARKER_SINGLE_SHOT_PHASE_CORRECTION_BEGIN
+float Class_Feeder_FSM::Calculate_Single_Shot_Target() const
+{
+    return accumulated_angle + SINGLE_SHOT_ANGLE - single_shot_phase_correction;
+}
+// ROLLBACK_MARKER_SINGLE_SHOT_PHASE_CORRECTION_END
 
 // ============================================================================
 // 到位判定
@@ -176,7 +166,7 @@ static void DetermineFeederModeAndTrigger(const Struct_Feeder_Input &input,
             trigger_pressed = FEEDER_TRIGGER_FORWARD;
             fwd_armed = 0;
         }
-        if (input.scroll_value < 0.80f)
+        if (fabs(input.scroll_value) < 0.20f)
         {
             fwd_armed = 1;
         }
@@ -223,7 +213,9 @@ void Class_Feeder_FSM::Update(const Struct_Feeder_Input &input,
         (last_trigger_pressed == FEEDER_TRIGGER_NONE);
     last_trigger_pressed = trigger_pressed;
 
-    if (current_mode == FEEDER_MODE_SINGLE && forward_rising_edge != 0U)
+    if (current_mode == FEEDER_MODE_SINGLE &&
+        Get_Now_Status_Serial() == FEEDER_STOP &&
+        forward_rising_edge != 0U)
     {
         single_shot_pending = 1;
     }
@@ -233,8 +225,19 @@ void Class_Feeder_FSM::Update(const Struct_Feeder_Input &input,
         manual_reverse_pending = 1;
     }
 
-    // ---- 第5步: 状态机流转 ----
-    switch (Get_Now_Status_Serial())
+    // ---- 第5步: 强制停止优先 —— 停止指令最高优先级，不能被其他指令覆盖 ----
+    if (current_mode == FEEDER_MODE_STOP)
+    {
+        control_type  = FEEDER_CONTROL_STOP;
+        control_output = 0.0f;
+        single_shot_target_locked    = 0;
+        manual_reverse_target_locked = 0;
+        single_shot_phase_correction = 0.0f;
+        Set_Status(FEEDER_STOP);
+    }
+    else
+    {
+        switch (Get_Now_Status_Serial())
     {
     case FEEDER_STOP:
         control_type  = FEEDER_CONTROL_STOP;
@@ -245,11 +248,13 @@ void Class_Feeder_FSM::Update(const Struct_Feeder_Input &input,
         if (current_mode == FEEDER_MODE_CONTINUOUS &&
             current_trigger_pressed == FEEDER_TRIGGER_FORWARD)
         {
+            single_shot_phase_correction = 0.0f;
             Set_Status(FEEDER_CONTINUOUS_SHOT);
         }
         else if (current_mode != FEEDER_MODE_STOP && manual_reverse_pending != 0U)
         {
             manual_reverse_pending = 0;
+            single_shot_phase_correction = 0.0f;
             manual_reverse_target_angle = accumulated_angle - SINGLE_SHOT_ANGLE;
             manual_reverse_target_locked = 1;
             Set_Status(FEEDER_MANUAL_REVERSE);
@@ -257,14 +262,14 @@ void Class_Feeder_FSM::Update(const Struct_Feeder_Input &input,
         else if (single_shot_pending != 0U)
         {
             single_shot_pending = 0;
-            single_shot_target_angle = accumulated_angle + SINGLE_SHOT_ANGLE;
+            single_shot_target_angle = Calculate_Single_Shot_Target();
             single_shot_target_locked = 1;
             Set_Status(FEEDER_SINGLE_SHOT);
         }
         else if (current_mode == FEEDER_MODE_SINGLE &&
                  current_trigger_pressed == FEEDER_TRIGGER_FORWARD)
         {
-            single_shot_target_angle = accumulated_angle + SINGLE_SHOT_ANGLE;
+            single_shot_target_angle = Calculate_Single_Shot_Target();
             single_shot_target_locked = 1;
             Set_Status(FEEDER_SINGLE_SHOT);
         }
@@ -273,7 +278,7 @@ void Class_Feeder_FSM::Update(const Struct_Feeder_Input &input,
     case FEEDER_SINGLE_SHOT:
         if (single_shot_target_locked == 0U)
         {
-            single_shot_target_angle = accumulated_angle + SINGLE_SHOT_ANGLE;
+            single_shot_target_angle = Calculate_Single_Shot_Target();
             single_shot_target_locked = 1;
         }
         control_type  = FEEDER_CONTROL_ANGLE;
@@ -290,6 +295,7 @@ void Class_Feeder_FSM::Update(const Struct_Feeder_Input &input,
         control_type  = FEEDER_CONTROL_SPEED;
         control_output = FORWARD_SPEED;
         single_shot_target_locked = 0;
+        single_shot_phase_correction = 0.0f;
 
         if (current_mode != FEEDER_MODE_CONTINUOUS ||
             current_trigger_pressed != FEEDER_TRIGGER_FORWARD)
@@ -315,14 +321,43 @@ void Class_Feeder_FSM::Update(const Struct_Feeder_Input &input,
         break;
 
     case FEEDER_SINGLE_COOLDOWN:
-        control_type  = FEEDER_CONTROL_STOP;
-        control_output = 0.0f;
+        // ROLLBACK_MARKER_SINGLE_COOLDOWN_HOLD_BEGIN
+        // Hold the shot target briefly after "finished" so rotor inertia is
+        // actively braked instead of letting the feeder coast with 0 output.
+        control_type  = FEEDER_CONTROL_ANGLE;
+        control_output = single_shot_target_angle;
 
-        if (Status[FEEDER_SINGLE_COOLDOWN].Count_Time >= SINGLE_SHOT_COOLDOWN_TICKS ||
-            current_trigger_pressed == FEEDER_TRIGGER_NONE)
         {
-            Set_Status(FEEDER_STOP);
+            const float cooldown_signed_error = accumulated_angle - single_shot_target_angle;
+            const float cooldown_error = fabs(single_shot_target_angle - accumulated_angle);
+            const float cooldown_speed = fabs(current_speed);
+            const uint8_t remote_hold_min_done =
+                (Status[FEEDER_SINGLE_COOLDOWN].Count_Time >= SINGLE_SHOT_REMOTE_HOLD_TICKS);
+            const uint8_t remote_hold_settled =
+                (cooldown_error <= SINGLE_SHOT_SETTLE_THRESHOLD &&
+                 cooldown_speed <= SINGLE_SHOT_SETTLE_SPEED_RPM);
+            const uint8_t remote_hold_timeout =
+                (Status[FEEDER_SINGLE_COOLDOWN].Count_Time >= SINGLE_SHOT_REMOTE_HOLD_TIMEOUT_TICKS);
+
+            if (Status[FEEDER_SINGLE_COOLDOWN].Count_Time >= SINGLE_SHOT_COOLDOWN_TICKS ||
+                (current_trigger_pressed == FEEDER_TRIGGER_NONE &&
+                 remote_hold_min_done &&
+                 (remote_hold_settled || remote_hold_timeout)))
+            {
+                // ROLLBACK_MARKER_SINGLE_SHOT_PHASE_CORRECTION_BEGIN
+                if (fabs(cooldown_signed_error) <= SINGLE_SHOT_PHASE_CORRECTION_LIMIT)
+                {
+                    single_shot_phase_correction = cooldown_signed_error;
+                }
+                else
+                {
+                    single_shot_phase_correction = 0.0f;
+                }
+                // ROLLBACK_MARKER_SINGLE_SHOT_PHASE_CORRECTION_END
+                Set_Status(FEEDER_STOP);
+            }
         }
+        // ROLLBACK_MARKER_SINGLE_COOLDOWN_HOLD_END
         break;
 
     default:
@@ -330,9 +365,11 @@ void Class_Feeder_FSM::Update(const Struct_Feeder_Input &input,
         control_output = 0.0f;
         single_shot_target_locked    = 0;
         manual_reverse_target_locked = 0;
+        single_shot_phase_correction = 0.0f;
         Set_Status(FEEDER_STOP);
         break;
     }
+    } // else: current_mode != FEEDER_MODE_STOP
 }
 
 // ============================================================================

@@ -55,8 +55,8 @@ private:
 
     uint8_t current_mode = FRICTION_MODE_STOP;
 
-    static constexpr float TARGET_SPEED = 3200.0f;
-    static constexpr float READY_SPEED_THRESHOLD = 3200.0f; 
+    static constexpr float TARGET_SPEED = -5300.0f;
+    static constexpr float READY_SPEED_THRESHOLD = -5300.0f; 
     static constexpr uint32_t STARTING_TIME_COUNT = 200;
 };
 #endif

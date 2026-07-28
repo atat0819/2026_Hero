@@ -33,20 +33,31 @@ float last_gimbal_roll = 0.0f; // 用于边缘触发检测的上一次滚轮值
 // feeder_mode, friction_mode, trigger_pressed 已迁移至 FSM 内部判定
 
 void DJI3508_feedback();
+static float Brake_Friction_To_Stop(float speed);
 
 Class_Feeder_FSM feeder_fsm;
 Class_Friction_FSM friction_fsm;
 
-ALG::PID::PID feeder_angle_pid(2.0f, 0.00f, 0.0f, 5000.0f, 1000.0f, 100.0f);
-ALG::PID::PID feeder_speed_pid(1.0f, 0.00f, 0.0f, 5000.0f, 1000.0f, 100.0f);
+ALG::PID::PID feeder_angle_pid(2.5f, 0.00f, 0.0f, 10000.0f, 1000.0f, 100.0f);
+ALG::PID::PID feeder_speed_pid(1.2f, 0.02f, 0.0f, 16384.0f, 1000.0f, 100.0f);
 ALG::PID::PID feeder_angle_pid_speed(2.5f, 0.00f, 0.0f, 5000.0f, 1000.0f, 100.0f);
 ALG::PID::PID feeder_stop_pid(0.0f, 0.00f, 0.0f, 20000.0f, 1000.0f, 100.0f);
 
 
 ALG::PID::PID feeder_speed_pid_speed(1.0f, 0.00f, 0.0f, 5000.0f, 1000.0f, 100.0f);
-ALG::PID::PID left_friction_pid(8.0f, 0.00f, 0.0f, 16384.0f, 1000.0f, 100.0f);
-ALG::PID::PID right_friction_pid(8.0f, 0.00f, 0.0f, 16384.0f, 1000.0f, 100.0f);
+ALG::PID::PID left_friction_pid(20.0f, 0.0f, 0.0f, 16384.0f, 1000.0f, 100.0f);
+ALG::PID::PID right_friction_pid(20.0f, 0.0f, 0.0f, 16384.0f, 1000.0f, 100.0f);
 
+static constexpr float FRICTION_STOP_DEADBAND_RPM = 80.0f;
+static constexpr float FRICTION_BRAKE_KP = 6.0f;
+static constexpr float FRICTION_BRAKE_MAX_OUTPUT = 6000.0f;
+static constexpr float FRICTION_REVERSE_BRAKE_LIMIT = 2500.0f;
+// ROLLBACK_MARKER_FEEDER_STATIC_FF_BEGIN
+static constexpr float FEEDER_STATIC_FF_OUTPUT = 3200.0f;
+static constexpr float FEEDER_FF_MIN_ERROR_DEG = 275.0f;
+static constexpr float FEEDER_FF_MAX_SPEED_RPM = 500.0f;
+static constexpr float FEEDER_SINGLE_OUTPUT_LIMIT = 16384.0f;
+// ROLLBACK_MARKER_FEEDER_STATIC_FF_END
 
 float leijia = 0;
 
@@ -111,7 +122,7 @@ else
 last_gimbal_roll = RemoteData.gimbal_roll;
 // 触发检测和视觉开火已迁移至 feeder_fsm 内部，gimbal_task 不再处理
 /************************************************************************************** */
-    feeder_current_angle = dji3508_state[0].angle_deg; 
+    feeder_current_angle = dji3508_state[0].multi_angle;
     feeder_speed = dji3508_state[0].velocity_rpm;
     feeder_iq = dji3508_state[0].current_a;
     
@@ -137,11 +148,45 @@ leijia = feeder_fsm.Get_Accumulated_Angle();
 }
 else if (current_control_type == FEEDER_CONTROL_ANGLE)
 {
+    const float feeder_angle_error =
+        feeder_fsm.Get_Control_Output() - feeder_fsm.Get_Accumulated_Angle();
+    const float feeder_abs_angle_error =
+        (feeder_angle_error >= 0.0f) ? feeder_angle_error : -feeder_angle_error;
+    const float feeder_abs_speed =
+        (feeder_speed >= 0.0f) ? feeder_speed : -feeder_speed;
+    const uint8_t feeder_status = feeder_fsm.Get_Now_Status_Serial();
+
     feeder_target_speed = feeder_angle_pid.UpDate(
         feeder_fsm.Get_Control_Output(),
         feeder_fsm.Get_Accumulated_Angle()); // 位置环输入目标角度和当前累积角度，输出目标速度
 
     feeder_out = feeder_speed_pid.UpDate(feeder_target_speed, feeder_speed);
+
+    // ROLLBACK_MARKER_FEEDER_STATIC_FF_BEGIN
+    if ((feeder_status == FEEDER_SINGLE_SHOT ||
+         feeder_status == FEEDER_SINGLE_COOLDOWN) &&
+        feeder_abs_angle_error > FEEDER_FF_MIN_ERROR_DEG &&
+        feeder_abs_speed < FEEDER_FF_MAX_SPEED_RPM)
+    {
+        if (feeder_target_speed > 0.0f && feeder_out > 0.0f)
+        {
+            feeder_out += FEEDER_STATIC_FF_OUTPUT;
+        }
+        else if (feeder_target_speed < 0.0f && feeder_out < 0.0f)
+        {
+            feeder_out -= FEEDER_STATIC_FF_OUTPUT;
+        }
+
+        if (feeder_out > FEEDER_SINGLE_OUTPUT_LIMIT)
+        {
+            feeder_out = FEEDER_SINGLE_OUTPUT_LIMIT;
+        }
+        else if (feeder_out < -FEEDER_SINGLE_OUTPUT_LIMIT)
+        {
+            feeder_out = -FEEDER_SINGLE_OUTPUT_LIMIT;
+        }
+    }
+    // ROLLBACK_MARKER_FEEDER_STATIC_FF_END
 }
 
 else if (current_control_type == FEEDER_CONTROL_SPEED)
@@ -176,13 +221,52 @@ else
 /********************************************************************************** */
 friction_fsm.Update(friction_input, friction_current_speed_left, friction_current_speed_right);
 
- left_out = left_friction_pid.UpDate(
-    friction_fsm.Get_Left_Control_Output(),
-    friction_current_speed_left);
+float left_friction_target = friction_fsm.Get_Left_Control_Output();
+float right_friction_target = friction_fsm.Get_Right_Control_Output();
 
- right_out = right_friction_pid.UpDate(
-    friction_fsm.Get_Right_Control_Output(),
-    friction_current_speed_right);
+if (left_friction_target == 0.0f && right_friction_target == 0.0f)
+{
+    left_friction_pid.reset();
+    right_friction_pid.reset();
+    left_out = Brake_Friction_To_Stop(friction_current_speed_left);
+    right_out = Brake_Friction_To_Stop(friction_current_speed_right);
+}
+else
+{
+    left_out = left_friction_pid.UpDate(
+        left_friction_target,
+        friction_current_speed_left);
+
+    right_out = right_friction_pid.UpDate(
+        right_friction_target,
+        friction_current_speed_right);
+
+    if ((left_friction_target < 0.0f && left_out > 0.0f) ||
+        (left_friction_target > 0.0f && left_out < 0.0f))
+    {
+        if (left_out > FRICTION_REVERSE_BRAKE_LIMIT)
+        {
+            left_out = FRICTION_REVERSE_BRAKE_LIMIT;
+        }
+        else if (left_out < -FRICTION_REVERSE_BRAKE_LIMIT)
+        {
+            left_out = -FRICTION_REVERSE_BRAKE_LIMIT;
+        }
+    }
+
+    if ((right_friction_target < 0.0f && right_out > 0.0f) ||
+        (right_friction_target > 0.0f && right_out < 0.0f))
+    {
+        if (right_out > FRICTION_REVERSE_BRAKE_LIMIT)
+        {
+            right_out = FRICTION_REVERSE_BRAKE_LIMIT;
+        }
+        else if (right_out < -FRICTION_REVERSE_BRAKE_LIMIT)
+        {
+            right_out = -FRICTION_REVERSE_BRAKE_LIMIT;
+        }
+    }
+}
 /********************************************************************************** */
 	friction_motor.setCAN((int16_t)feeder_out, 1);
 friction_motor.setCAN((int16_t)left_out, 2);
@@ -191,6 +275,15 @@ friction_motor.setCAN((int16_t)right_out, 3);
 friction_motor.sendCAN();
 /**************************************************************************** */
 //vofa_send(feeder_fsm.Get_Control_Output(),feeder_fsm.Get_Accumulated_Angle(), feeder_speed, 360, 0, 0); // 发送数据到VOFA
+vofa_send(left_friction_target, right_friction_target, friction_current_speed_left, friction_current_speed_right, left_out, right_out); // 发送数据到VOFA
+// vofa_send(feeder_fsm.Get_Accumulated_Angle(),          // ch1: 当前累积角度
+//           feeder_fsm.Get_Single_Shot_Target_Angle(),   // ch2: 单发目标角度
+//           feeder_fsm.Get_Accumulated_Angle() -
+//               feeder_fsm.Get_Single_Shot_Target_Angle(), // ch3: 角度误差（负=未到位，0=到位）
+//           feeder_speed,                                  // ch4: 当前转速
+//           (float)feeder_fsm.Get_Now_Status_Serial(),    // ch5: FSM状态 1=SINGLE_SHOT
+//           feeder_out);                                   // ch6: CAN输出电流
+
 /****************************************************************************** */
 vTaskDelay(5); // 每5ms执行一次控制循环
     }
@@ -222,4 +315,25 @@ float hz_to_rotor_angle_per_frame(float fire_hz)
     const float control_period = 0.005f;  // 与 vTaskDelay(5) 一致
 
     return fire_hz * angle_per_slot * external_reduction * internal_reduction * control_period;
+}
+
+static float Brake_Friction_To_Stop(float speed)
+{
+    if (speed > -FRICTION_STOP_DEADBAND_RPM && speed < FRICTION_STOP_DEADBAND_RPM)
+    {
+        return 0.0f;
+    }
+
+    float output = -FRICTION_BRAKE_KP * speed;
+
+    if (output > FRICTION_BRAKE_MAX_OUTPUT)
+    {
+        output = FRICTION_BRAKE_MAX_OUTPUT;
+    }
+    else if (output < -FRICTION_BRAKE_MAX_OUTPUT)
+    {
+        output = -FRICTION_BRAKE_MAX_OUTPUT;
+    }
+
+    return output;
 }

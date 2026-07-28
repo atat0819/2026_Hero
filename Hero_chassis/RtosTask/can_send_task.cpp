@@ -23,7 +23,7 @@
 #include "../communication/gimbal_refree.hpp"
 #include "../user/core/APP/Referee/RM_RefereeSystem.h"
 
-#define Gain 4.7
+#define Gain 2.4
 
 QueueHandle_t motorspeedtargetQueue; // 声明一个全局队列句柄，用于在任务之间传递电机转速数据
 QueueHandle_t motorCurrentDataQueue; // 声明一个全局队列句柄，用于在任务之间传递电机当前数据
@@ -117,10 +117,10 @@ LPFFilter acc_filter_z(0.2f);
 
 // 4 个电机，4 个 PID
 ALG::PID::PID motor_pid[4] = {
-    {330.0f, 0.1f, 0.0f, 16384.0f, 5000.0f, 500.0f},   //电机1 (扫频PID)
-	{350.0f, 0.1f, 0.0f, 16384.0f, 5000.0f, 500.0f},    //电机2
-	{330.0f, 0.1f, 0.0f, 16384.0f, 5000.0f, 500.0f},    //电机3
-	{320.0f, 0.1f, 0.0f, 16384.0f, 5000.0f, 500.0f}     //电机4	
+    {160.0f, 0.03f, 0.0f, 16384.0f, 5000.0f, 500.0f},   //电机1 (扫频PID)
+	{160.0f, 0.03f, 0.0f, 16384.0f, 5000.0f, 500.0f},    //电机2
+	{160.0f, 0.03f, 0.0f, 16384.0f, 5000.0f, 500.0f},    //电机3
+	{160.0f, 0.03f, 0.0f, 16384.0f, 5000.0f, 500.0f}     //电机4	
 };
 
 ALG::PID::PID test_pid = {0.0f, 0.0f, 0.0f, 10000.0f, 5000.0f, 500.0f};
@@ -539,7 +539,7 @@ osDelay(1);
 
            
        //4. VOFA: pre_I, post_I, PowerTotal(预测), post_power(衰减后), PowerMax, eta*100
-	       vofa_send(motor_output_pre[0], motor_output[0],
+	       vofa_send(motor_target_speed[0], current_speed_rads[0],
 	                 chassis_power_ctrl.getPowerTotal(), post_power,
 	                 energy_ring.GetPowerMax(), chassis_power_ctrl.getEta() * 100.0f);
 // 修复后：加上了取地址符 &

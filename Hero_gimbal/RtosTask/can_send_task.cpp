@@ -651,9 +651,9 @@ else if (pitch_gimbal_fsm.Get_Control_Type() == GIMBAL_CONTROL_SPEED || imu_faul
 
            gimbal_motor.ctrl_Torque(2, 2, (int16_t)yaw_control_output);   // yaw   → CAN1
             gimbal_motor.ctrl_Torque(1, 1, (int16_t)pitch_control_output); // pitch → CAN2
-         vofa_send(pitch_target_angle,pitch_current_angle,
-                   pitch_target_speed,pitch_current_speed,
-                   pitch_target_speed,pitch_current_speed); // 发送数据到VOFA
+        //  vofa_send(pitch_target_angle,pitch_current_angle,
+        //            pitch_target_speed,pitch_current_speed,
+        //            pitch_target_speed,pitch_current_speed); // 发送数据到VOFA
 
          }
 

@@ -115,7 +115,7 @@ void MX_FREERTOS_Init(void) {
   /* USER CODE BEGIN RTOS_THREADS */
   MX_USB_DEVICE_Init();
  start_can_send =  xTaskCreate(can_send_task, "CAN_Send_Task", 2048, NULL, osPriorityAboveNormal+2, &xCanSendHandle);
-  start_gimbal = xTaskCreate(gimbal_task, "Gimbal_Task", 512, NULL, osPriorityAboveNormal+1, &xGimbalHandle);
+  start_gimbal = xTaskCreate(gimbal_task, "Gimbal_Task", 1024, NULL, osPriorityAboveNormal+1, &xGimbalHandle);
   start_remote_control = xTaskCreate(remote_control_task, "Remote_Control_Task", 256, NULL, osPriorityAboveNormal, &xRemoteHandle);
 
 

@@ -233,6 +233,6 @@ extern "C" void remote_control_task(void *argument)
         }
        
 
-        vTaskDelay(2);
+        vTaskDelay(10);
     }
 }

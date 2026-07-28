@@ -55,8 +55,8 @@
 //           FEEDER_STOP (循环)
 //
 // ---- 遥控器 vs 视觉 关键区别 ----
-// 遥控器单发: trigger 是单 tick 脉冲, COOLDOWN 进入瞬间 trigger 早已
-//            回到 NONE, 条件2立即命中 → 直接回 STOP, 无冷却等待
+// 遥控器单发: trigger 是单 tick 脉冲, COOLDOWN 中短暂抱住目标角刹车后
+//            回 STOP, 避免到位后 0 输出导致惯性过冲
 // 视觉单发:   trigger 是持续电平, COOLDOWN 期间一直为 FWD, 只能等
 //            条件1 (Count_Time 涨到阈值) → 冷却结束后回 STOP 再打
 //
@@ -128,7 +128,8 @@ public:
     float   Get_Manual_Reverse_Target_Angle(); // 反转目标角度
 
 private:
-    void Update_Accumulated_Angle(float feeder_current_angle);  // 角度累加 + 圈数修正
+    void Update_Accumulated_Angle(float feeder_current_angle);  // 接收电机层多圈角度
+    float Calculate_Single_Shot_Target() const;                 // 当前角度 + 单发角度 + 小范围相位修正
     bool Is_Single_Shot_Finished()    const;                     // 单发到位判定
     bool Is_Manual_Reverse_Finished() const;                     // 反转到位判定
 
@@ -142,6 +143,7 @@ private:
     float accumulated_angle           = 0.0f;  // 累积角度 (°), 跨圈累计
     float single_shot_target_angle    = 0.0f;  // 单发目标角度
     float manual_reverse_target_angle = 0.0f;  // 反转目标角度
+    float single_shot_phase_correction = 0.0f; // 上一发小误差补偿, 超限则清零
 
     // ---- 扳机 / 模式快照 ----
     uint8_t last_trigger_pressed  = 0;         // 上一轮扳机状态 (用于边缘检测)
@@ -165,29 +167,38 @@ private:
     // 计算: 拨弹轮 1/8 圈 = 45°, 减速比 2.75×19 = 52.25
     // 45° × 减速比 / 外传比 = ... 当前值: -3060
     static constexpr float SINGLE_SHOT_ANGLE = -(60.0 * 51.0f);
+    //static constexpr float SINGLE_SHOT_ANGLE = -(36.0 * 1.66f);
 
     // 单发到位判定阈值 (°) — 当前角度与目标角度的误差小于此值即认为完成
     // PID 调好后可收紧到 10~30
     static constexpr float SINGLE_SHOT_FINISH_THRESHOLD = 250.0f;
 
-    // 角度跨圈修正阈值 — 相邻两次读数差值超过此值认为发生了 ±360° 跳变
-    static constexpr float ANGLE_WRAP_THRESHOLD = 180.0f;
-
-    // 完整一圈 = 360°
-    static constexpr float FULL_ROTATION_ANGLE = 360.0f;
+    // ROLLBACK_MARKER_SINGLE_SHOT_PHASE_CORRECTION_BEGIN
+    // 上一发最终误差绝对值不超过该转子角时, 下一发反向小修正; 超过则认为异常, 不补偿。
+    static constexpr float SINGLE_SHOT_PHASE_CORRECTION_LIMIT = 100.0f;
+    // ROLLBACK_MARKER_SINGLE_SHOT_PHASE_CORRECTION_END
 
     // 连发模式恒定转速 (RPM 对应电机轴, ×10 换算)
     static constexpr float FORWARD_SPEED = (50.0f * 10.0f);
 
     // ---- 超时保护 (防止堵转卡死) ----
-    static constexpr uint32_t SINGLE_SHOT_TIMEOUT_COUNT   = 2000; // 单发超时 (ticks)
-    static constexpr uint32_t MANUAL_REVERSE_TIMEOUT_COUNT = 2000; // 反转超时 (ticks)
+    static constexpr uint32_t SINGLE_SHOT_TIMEOUT_COUNT   = 200; // 单发超时 (ticks)
+    static constexpr uint32_t MANUAL_REVERSE_TIMEOUT_COUNT = 200; // 反转超时 (ticks)
 
     // ---- 单发冷却间隔 (视觉模式核心参数) ----
     // 单位: 控制周期 ticks (1 tick = 5ms, 由 gimbal_task 的 vTaskDelay(5) 决定)
     // 换算: 1000 ticks = 5s, 200 ticks = 1s, 40 ticks = 200ms
     // 视觉持续开火时, 每发弹丸之间等待此时间
     static constexpr uint32_t SINGLE_SHOT_COOLDOWN_TICKS = 1000;
+
+    // ROLLBACK_MARKER_SINGLE_COOLDOWN_HOLD_BEGIN
+    // 若抱角刹车效果不好，回退时删除本常量，并把 FEEDER_SINGLE_COOLDOWN
+    // 恢复为 FEEDER_CONTROL_STOP + control_output = 0.0f。
+    static constexpr uint32_t SINGLE_SHOT_REMOTE_HOLD_TICKS = 30; // 遥控器单发最短抱角刹车 150ms
+    static constexpr uint32_t SINGLE_SHOT_REMOTE_HOLD_TIMEOUT_TICKS = 60; // 遥控器抱角最长 300ms
+    static constexpr float SINGLE_SHOT_SETTLE_THRESHOLD = 50.0f; // 转子角误差小于此值才认为锁稳
+    static constexpr float SINGLE_SHOT_SETTLE_SPEED_RPM = 40.0f; // 转速低于此值才允许退出抱角
+    // ROLLBACK_MARKER_SINGLE_COOLDOWN_HOLD_END
 };
 
 #endif

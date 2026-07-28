@@ -13,8 +13,8 @@ void Class_Friction_FSM::Init()
 
 bool Class_Friction_FSM::Is_Speed_Ready(float left_speed, float right_speed) const
 {
-    return fabs(left_speed) >= READY_SPEED_THRESHOLD &&
-           fabs(right_speed) >= READY_SPEED_THRESHOLD;
+    return left_speed <= READY_SPEED_THRESHOLD &&
+           right_speed >= -READY_SPEED_THRESHOLD;
 }
 
 // ===== FSM 内部判断 friction_mode =====
@@ -45,7 +45,16 @@ void Class_Friction_FSM::Update(const Struct_Friction_Input &input,
 {
     current_mode = DetermineFrictionMode(input);
 
-    switch (Get_Now_Status_Serial())
+    // 强制停止优先 —— 停止指令最高优先级，不能被其他指令覆盖
+    if (current_mode == FRICTION_MODE_STOP)
+    {
+        left_control_output = 0.0f;
+        right_control_output = 0.0f;
+        Set_Status(FRICTION_STOP);
+    }
+    else
+    {
+        switch (Get_Now_Status_Serial())
     {
     case FRICTION_STOP:
         left_control_output = 0.0f;
@@ -92,6 +101,7 @@ void Class_Friction_FSM::Update(const Struct_Friction_Input &input,
         Set_Status(FRICTION_STOP);
         break;
     }
+    } // else: current_mode != FRICTION_MODE_STOP
 }
 
 float Class_Friction_FSM::Get_Left_Control_Output()
