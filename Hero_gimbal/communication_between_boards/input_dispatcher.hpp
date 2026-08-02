@@ -92,4 +92,8 @@ private:
     static constexpr uint16_t VISION_HOLD_THRESHOLD  = 2000;  // 视觉延时 2000ms
 };
 
+// 全局键鼠输入状态机实例（定义于 input_dispatcher.cpp），
+// 需要读取键鼠状态的任务 include 本头文件后直接使用
+extern InputDispatcher input_dispatcher;
+
 #endif // INPUT_DISPATCHER_HPP

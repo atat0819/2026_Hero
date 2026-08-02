@@ -15,10 +15,10 @@
 //
 // ---- 上游输入 (由 gimbal_task.cpp 提供) ----
 // feeder_mode:     遥控器 S1/S2 拨杆组合决定 (STOP / SINGLE / CONTINUOUS)
-// trigger_pressed: 扳机信号, 两种来源:
+// trigger_pressed: 扳机信号, 来源:
 //   - 遥控器滚轮: 单发模式产生单 tick 脉冲 (边缘检测 + armed 标志)
 //                 连发模式产生持续电平
-//   - 视觉模块:   持续电平 (IsFireCommanded() 为 true 时一直拉高)
+// 注意: 视觉端 fire 指令不参与触发 (设计上丢弃, 开火只认滚轮/键鼠按键)
 //
 // ---- 下游输出 (供 gimbal_task.cpp PID 控制层) ----
 // control_type:  STOP  → 电机刹车
@@ -33,7 +33,6 @@
 //                    │  连发+扳机 → CONTINUOUS     │
 //                    │  反转pending → REVERSE      │
 //                    │  单发边缘 → SINGLE_SHOT     │ ← 遥控器脉冲路径
-//                    │  单发电平 → SINGLE_SHOT     │ ← 视觉持续路径
 //                    └──────┬──────────┬───────────┘
 //                           │          │
 //              ┌────────────┘          └──────────────┐
@@ -54,19 +53,13 @@
 //               ▼
 //           FEEDER_STOP (循环)
 //
-// ---- 遥控器 vs 视觉 关键区别 ----
-// 遥控器单发: trigger 是单 tick 脉冲, COOLDOWN 中短暂抱住目标角刹车后
-//            回 STOP, 避免到位后 0 输出导致惯性过冲
-// 视觉单发:   trigger 是持续电平, COOLDOWN 期间一直为 FWD, 只能等
-//            条件1 (Count_Time 涨到阈值) → 冷却结束后回 STOP 再打
-//
 // =============================================================================
 
 // ---- 模式: 由遥控器拨杆决定当前射击模式 ----
 enum Enum_Feeder_Mode
 {
     FEEDER_MODE_STOP = 0,       // 停止
-    FEEDER_MODE_SINGLE,         // 单发模式 (遥控器滚轮脉冲 / 视觉电平)
+    FEEDER_MODE_SINGLE,         // 单发模式 (遥控器滚轮脉冲)
     FEEDER_MODE_CONTINUOUS,     // 连发模式 (遥控器滚轮持续)
 };
 
@@ -105,7 +98,6 @@ typedef struct Struct_Feeder_Input
     bool     is_single_shot;    // T 键状态 (InputDispatcher)  true=单发, false=连发
     bool     fire_triggered;    // 左右键同时按下 (InputDispatcher)
     float    scroll_value;      // 遥控器滚轮值
-    bool     vision_fire;       // 视觉开火指令（注意：不直接触发拨弹轮转动，仅滚轮/键鼠按键控制触发）
     bool     is_keymouse;       // 是否键鼠模式 (由 s1/s2 判定)
 };
 
@@ -185,10 +177,10 @@ private:
     static constexpr uint32_t SINGLE_SHOT_TIMEOUT_COUNT   = 200; // 单发超时 (ticks)
     static constexpr uint32_t MANUAL_REVERSE_TIMEOUT_COUNT = 200; // 反转超时 (ticks)
 
-    // ---- 单发冷却间隔 (视觉模式核心参数) ----
+    // ---- 单发冷却间隔 ----
     // 单位: 控制周期 ticks (1 tick = 5ms, 由 gimbal_task 的 vTaskDelay(5) 决定)
     // 换算: 1000 ticks = 5s, 200 ticks = 1s, 40 ticks = 200ms
-    // 视觉持续开火时, 每发弹丸之间等待此时间
+    // 遥控器滚轮单发后, 距下一次单发的最小间隔
     static constexpr uint32_t SINGLE_SHOT_COOLDOWN_TICKS = 1000;
 
     // ROLLBACK_MARKER_SINGLE_COOLDOWN_HOLD_BEGIN

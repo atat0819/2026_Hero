@@ -5,12 +5,11 @@
  * 状态流转:
  *   STOP ──┬──(连发+扳机)────→ CONTINUOUS_SHOT ──(松扳机)──→ STOP
  *          ├──(反转pending)──→ MANUAL_REVERSE ──(到位/超时)→ STOP
- *          ├──(单发边缘)────→ SINGLE_SHOT ──(到位/超时)→ COOLDOWN → STOP
- *          └──(单发电平)────→ SINGLE_SHOT (同上, 冷却后循环)
+ *          └──(单发边缘)────→ SINGLE_SHOT ──(到位/超时)→ COOLDOWN → STOP
  *
- * 两类扳机信号:
+ * 扳机信号:
  *   遥控器脉冲: 边缘触发, single_shot_pending 挂起后 STOP 消费
- *   视觉持续:   电平触发, STOP 中直接判断 current_trigger_pressed
+ *   (视觉端 fire 指令设计上丢弃, 不参与任何触发)
  */
 
 #include "feeder_fsm.hpp"
@@ -73,9 +72,8 @@ bool Class_Feeder_FSM::Is_Manual_Reverse_Finished() const
 
 // ============================================================================
 // 模式与触发判定：FSM 内部根据 s1/s2 和键鼠状态自行决定
+// 开火触发仅认遥控器滚轮 / 键鼠按键，视觉端 fire 指令设计上丢弃
 // ============================================================================
-// 注意：遥控器模式下 vision_fire（视觉开火指令）不允许触发拨弹轮转动，
-// 仅由遥控器滚轮 (scroll_value) 控制拨弹轮触发。
 static void DetermineFeederModeAndTrigger(const Struct_Feeder_Input &input,
                                           uint8_t &feeder_mode,
                                           uint8_t &trigger_pressed)
@@ -91,8 +89,6 @@ static void DetermineFeederModeAndTrigger(const Struct_Feeder_Input &input,
     // ---- 键鼠模式 ----
     if (input.is_keymouse)
     {
-        // 键鼠模式：忽略视觉开火指令，由键鼠按键控制触发
-
         if (input.friction_on)
         {
             feeder_mode = input.is_single_shot ? FEEDER_MODE_SINGLE : FEEDER_MODE_CONTINUOUS;
@@ -107,7 +103,6 @@ static void DetermineFeederModeAndTrigger(const Struct_Feeder_Input &input,
     }
 
     // ---- 遥控器模式（保持原有挡位逻辑） ----
-    // 视觉开火指令 (vision_fire) 不参与触发判定，仅滚轮控制拨弹轮
 
     if (input.s1 == Remote::DOWN && input.s2 == Remote::DOWN)
     {
@@ -195,7 +190,6 @@ void Class_Feeder_FSM::Update(const Struct_Feeder_Input &input,
     Update_Accumulated_Angle(feeder_current_angle);
 
     // ---- 第2步: FSM 内部判断模式与触发 ----
-    // 注意：视觉开火指令 (vision_fire) 不参与触发判定，仅滚轮/键鼠按键控制拨弹轮
     uint8_t feeder_mode = FEEDER_MODE_STOP;
     uint8_t trigger_pressed = FEEDER_TRIGGER_NONE;
     DetermineFeederModeAndTrigger(input, feeder_mode, trigger_pressed);

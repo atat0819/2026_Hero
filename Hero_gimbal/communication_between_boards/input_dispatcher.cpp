@@ -3,6 +3,9 @@
 
 using Remote = BSP::REMOTE_CONTROL::RemoteController;
 
+// 全局键鼠输入状态机实例（声明见 input_dispatcher.hpp）
+InputDispatcher input_dispatcher;
+
 void InputDispatcher::Update(uint8_t s1, uint8_t s2, uint16_t keyboard,
                              bool mouse_left, bool mouse_right)
 {

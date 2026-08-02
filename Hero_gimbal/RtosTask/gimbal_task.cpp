@@ -9,7 +9,6 @@ const uint8_t chassis_motor_idxs[3] = {1, 2, 3}; // 3 个电机的接收偏移 I
 BSP::Motor::Dji::GM3508<3> friction_motor(0x200, chassis_motor_idxs, 0x200); // 电机控制器，初始ID为0x200，发送ID为0x2FF
 
 using Remote = BSP::REMOTE_CONTROL::RemoteController;
-extern InputDispatcher input_dispatcher;
 
 DJI3508_State_t dji3508_state[3]; // 存储三个电机的状态数据
 
@@ -90,7 +89,6 @@ feeder_input.friction_on    = input_dispatcher.IsFrictionOn();
 feeder_input.is_single_shot = input_dispatcher.IsSingleShot();
 feeder_input.fire_triggered = input_dispatcher.IsFireTriggered();
 feeder_input.scroll_value   = remoteController.get_scroll_();
-feeder_input.vision_fire    = vision_comm.IsFireCommanded();
 feeder_input.is_keymouse    = is_keymouse;
 
 Struct_Friction_Input friction_input = {};

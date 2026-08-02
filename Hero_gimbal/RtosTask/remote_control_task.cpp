@@ -5,6 +5,7 @@
 #include "usart.h"
 #include "../user/core/HAL/UART/uart_hal.hpp"
 #include "../user/core/BSP/version/vision_communication.hpp"
+#include "../communication_between_boards/input_dispatcher.hpp"
 #include "gimbal_task.hpp"
 #include <cstring>
 
@@ -215,9 +216,10 @@ extern "C" void remote_control_task(void *argument)
 
         if (imu.isConnected())
         {
-            // 视觉模式：S1 中 + S2 中
-            uint8_t vision_mode = (remoteController.get_s1() == BSP::REMOTE_CONTROL::RemoteController::MIDDLE &&
-                                   remoteController.get_s2() == BSP::REMOTE_CONTROL::RemoteController::MIDDLE) ? 1 : 0;
+            // 视觉模式：遥控器 S1中+S2中，或键鼠右键按住 ≥2s
+            uint8_t vision_mode = ((remoteController.get_s1() == BSP::REMOTE_CONTROL::RemoteController::MIDDLE &&
+                                    remoteController.get_s2() == BSP::REMOTE_CONTROL::RemoteController::MIDDLE) ||
+                                   input_dispatcher.IsVisionMode()) ? 1 : 0;
 
             float quaternion[4] = {imu.GetQuaternion(0), imu.GetQuaternion(1), imu.GetQuaternion(2), imu.GetQuaternion(3)};
 
