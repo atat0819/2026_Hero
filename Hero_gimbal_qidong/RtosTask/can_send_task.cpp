@@ -240,11 +240,7 @@ static uint16_t startup_protect = 0; // 上电保护计数器
         // 这是底盘电机的数据，交给 chassis_motor 解析
         gimbal_motor.Parse(frame);
     }
-   else if (frame.id >= 0x201 && frame.id <= 0x204)
-    {
-        friction_motor.Parse(frame);
-    }
-    else if (frame.id >= 0x01 && frame.id <= 0x10)
+   else if (frame.id >= 0x01 && frame.id <= 0x10)
     {
         dm666.Parse(frame);
     }

@@ -23,8 +23,8 @@ public:
 
     InputSource GetSource() const { return source_; }
 
-    /// R 键翻转状态：摩擦轮+拨弹轮开关
-    bool IsFrictionOn() const { return r_toggle_on_; }
+    /// R 键翻转状态：拨弹轮开关
+    bool IsFeederOn() const { return r_toggle_on_; }
 
     /// T 键翻转状态：true=单发, false=连发
     bool IsSingleShot() const { return t_single_shot_; }

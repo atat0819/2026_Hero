@@ -21,6 +21,7 @@
 #include "cmsis_os.h"
 #include "can.h"
 #include "dma.h"
+#include "i2c.h"
 #include "tim.h"
 #include "usart.h"
 #include "usb_device.h"
@@ -104,6 +105,7 @@ int main(void)
   MX_TIM6_Init();
   MX_UART8_Init();
   MX_UART7_Init();
+  MX_I2C2_Init();
   /* USER CODE BEGIN 2 */
  
 

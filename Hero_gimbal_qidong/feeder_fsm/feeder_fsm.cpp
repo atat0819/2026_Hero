@@ -93,7 +93,7 @@ static void DetermineFeederModeAndTrigger(const Struct_Feeder_Input &input,
     {
         // 键鼠模式：忽略视觉开火指令，由键鼠按键控制触发
 
-        if (input.friction_on)
+        if (input.feeder_on)
         {
             feeder_mode = input.is_single_shot ? FEEDER_MODE_SINGLE : FEEDER_MODE_CONTINUOUS;
         }

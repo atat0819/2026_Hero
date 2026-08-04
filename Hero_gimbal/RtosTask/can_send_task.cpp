@@ -205,8 +205,6 @@ yaw_gimbal_fsm_config.max_angle = 0.0f;
 yaw_gimbal_fsm_config.limit_angle = 0U;
 yaw_gimbal_fsm_config.normalize_angle = 1U;
 yaw_gimbal_fsm_config.continuous_angle = 1U;
-yaw_gimbal_fsm_config.vision_slope_inc = 2.0f;   // 视觉 yaw 加速斜率 (≈2000°/s, 正常跟踪不触发, 仅拦目标跳变)
-	yaw_gimbal_fsm_config.vision_slope_dec = 2.0f;   // 视觉 yaw 减速斜率
 yaw_gimbal_fsm.Init(yaw_gimbal_fsm_config, GIMBAL_STATUS_STOP);
 
 pitch_gimbal_fsm_config.angle_step = 0.15f;
@@ -217,8 +215,6 @@ pitch_gimbal_fsm_config.max_angle = 23.9f;    // IMU pitch 最高点
 pitch_gimbal_fsm_config.limit_angle = 1U;
 pitch_gimbal_fsm_config.normalize_angle = 0U;
 pitch_gimbal_fsm_config.continuous_angle = 0U;
-pitch_gimbal_fsm_config.vision_slope_inc = 1.5f;   // 视觉 pitch 加速斜率 (≈1500°/s, 正常跟踪不触发, 仅拦目标跳变)
-	pitch_gimbal_fsm_config.vision_slope_dec = 1.5f;   // 视觉 pitch 减速斜率
 pitch_gimbal_fsm.Init(pitch_gimbal_fsm_config, GIMBAL_STATUS_STOP);
 /************************************************************************************* */
 

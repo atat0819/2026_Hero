@@ -38,7 +38,7 @@ void InputDispatcher::Update(uint8_t s1, uint8_t s2, uint16_t keyboard,
     if (r_edge) {
         r_toggle_on_ = !r_toggle_on_;
         if (r_toggle_on_) {
-            t_single_shot_ = true;   // 开启摩擦轮默认单发
+            t_single_shot_ = true;   // 开启拨弹轮默认单发
         }
     }
 
@@ -75,7 +75,7 @@ void InputDispatcher::ResetKeyMouseState()
     right_hold_counter_ = 0;
     vision_mode_ = false;
 
-    // 翻转状态重置：切出键鼠 = 摩擦轮自动关闭，重进需重新按 R 开启
+    // 翻转状态重置：切出键鼠 = 拨弹轮自动关闭，重进需重新按 R 开启
     r_toggle_on_   = false;
     t_single_shot_ = true;
 

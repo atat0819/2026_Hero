@@ -2,7 +2,6 @@
 #define GIMBAL_FSM_HPP
 
 #include "../user/core/Alg/FSM/alg_fsm.hpp"
-#include "../user/core/Alg/UtilityFunction/SlopePlanning.hpp"
 #include <cstdint>
 
 enum Enum_Gimbal_Mode_Command
@@ -39,8 +38,6 @@ typedef struct Struct_Gimbal_FSM_Config
     uint8_t limit_angle = 0U;
     uint8_t normalize_angle = 0U;
     uint8_t continuous_angle = 0U;
-    float vision_slope_inc = 0.0f;      // 视觉模式：每个周期允许的最大增加量
-    float vision_slope_dec = 0.0f;      // 视觉模式：每个周期允许的最大减少量
 };
 
 /// @brief 云台 FSM 的原始输入，FSM 内部自行判断模式
@@ -102,8 +99,6 @@ private:
     uint8_t angle_target_initialized = 0U;
     uint8_t mode_changed_flag = 0U;
     uint8_t last_mode_command_ = GIMBAL_MODE_STOP;
-
-    Alg::Utility::SlopePlanning vision_slope_;
 };
 
 #endif

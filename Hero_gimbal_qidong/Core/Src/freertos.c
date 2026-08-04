@@ -28,6 +28,7 @@
 #include "can_send_task.hpp"
 #include "gimbal_task.hpp"
 #include "remote_control_task.hpp"
+#include "lob_shot.hpp"
 #include "usb_device.h"
 /* USER CODE END Includes */
 
@@ -63,10 +64,13 @@ const osThreadAttr_t defaultTask_attributes = {
 BaseType_t start_remote_control;
 BaseType_t start_can_send;
 BaseType_t start_gimbal;
+BaseType_t start_lob_shot;
+
 
 TaskHandle_t xRemoteHandle;
 TaskHandle_t xCanSendHandle;
 TaskHandle_t xGimbalHandle;
+TaskHandle_t xLobShotHandle;
 
 /* USER CODE END FunctionPrototypes */
 
@@ -117,7 +121,7 @@ void MX_FREERTOS_Init(void) {
  start_can_send =  xTaskCreate(can_send_task, "CAN_Send_Task", 2048, NULL, osPriorityAboveNormal+2, &xCanSendHandle);
   start_gimbal = xTaskCreate(gimbal_task, "Gimbal_Task", 1024, NULL, osPriorityAboveNormal+1, &xGimbalHandle);
   start_remote_control = xTaskCreate(remote_control_task, "Remote_Control_Task", 256, NULL, osPriorityAboveNormal, &xRemoteHandle);
-
+  start_lob_shot = xTaskCreate(lob_shot_task, "Lob_Shot_Task", 512, NULL, osPriorityAboveNormal+1, &xLobShotHandle);
 
   /* add threads, ... */
   /* USER CODE END RTOS_THREADS */
