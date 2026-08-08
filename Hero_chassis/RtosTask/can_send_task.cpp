@@ -23,7 +23,7 @@
 #include "../communication/gimbal_refree.hpp"
 #include "../user/core/APP/Referee/RM_RefereeSystem.h"
 
-#define Gain 2.4
+#define Gain 4.0
 
 QueueHandle_t motorspeedtargetQueue; // 声明一个全局队列句柄，用于在任务之间传递电机转速数据
 QueueHandle_t motorCurrentDataQueue; // 声明一个全局队列句柄，用于在任务之间传递电机当前数据
@@ -117,10 +117,10 @@ LPFFilter acc_filter_z(0.2f);
 
 // 4 个电机，4 个 PID
 ALG::PID::PID motor_pid[4] = {
-    {160.0f, 0.03f, 0.0f, 16384.0f, 5000.0f, 500.0f},   //电机1 (扫频PID)
-	{160.0f, 0.03f, 0.0f, 16384.0f, 5000.0f, 500.0f},    //电机2
-	{160.0f, 0.03f, 0.0f, 16384.0f, 5000.0f, 500.0f},    //电机3
-	{160.0f, 0.03f, 0.0f, 16384.0f, 5000.0f, 500.0f}     //电机4	
+    {300.0f, 0.03f, 0.0f, 16384.0f, 5000.0f, 500.0f},   //电机1 (扫频PID)
+	{300.0f, 0.03f, 0.0f, 16384.0f, 5000.0f, 500.0f},    //电机2
+	{300.0f, 0.03f, 0.0f, 16384.0f, 5000.0f, 500.0f},    //电机3
+	{300.0f, 0.03f, 0.0f, 16384.0f, 5000.0f, 500.0f}     //电机4	
 };
 
 ALG::PID::PID test_pid = {0.0f, 0.0f, 0.0f, 10000.0f, 5000.0f, 500.0f};
@@ -137,7 +137,8 @@ float target = 10.0f; // 目标速度（示例值）
 // };
 
 
-void vofa_send(float x1, float x2, float x3, float x4, float x5, float x6);
+void vofa_send9(float x1, float x2, float x3, float x4, float x5, float x6, float x7, float x8, float x9);
+void vofa_send10(float x1, float x2, float x3, float x4, float x5, float x6, float x7, float x8, float x9, float x10);
 float motor_target_speed[4];
 float motor_output[4];
 float motor_output_pre[4];  // 功率控制前的电流，用于VOFA对比
@@ -145,17 +146,26 @@ float current_speed_rads[4];
 float c = 2.0f;
 float phase_comp = 0.0f;   // 这个变量用于补偿系统的相位滞后，具体值需要通过实验调整
     float yaw_offset_rad = 0.0f;
+// 底盘预测功率 (W), 每个控制周期由 post_power 赋值更新 (只赋值不累加!)
+// 其他文件读取: extern float chassis_power_pred;
+float chassis_power_pred = 0.0f;
 
 // ========== 功率校准扫频测试 ==========
 Alg::PowerControlTestVersion::PowerControlTestVersion sweep_tester; // 扫频信号生成器
-// 功率多项式系数: P_in = K0 + K1*I + K2*w + K3*I*w + K4*I*I + K5*w*w
+// 功率多项式系数: P = K0 + K1*I + K2*w + K3*I*w + K4*I*I + K5*w*w
+// 整车模式拟合 (下地x4 + 悬空x1 加权合并, 剔除静止段):
+//   下地: xiadiceshi1 + dipanceshi3 + dipantest10 (带负载, 0-600rad/s)
+//   悬空: depanceshi10 (全转速 0-900rad/s, 补高速段形状)
+//   P_total = 4*K0 + K1*ΣI + K2*Σw + K3*Σ(I*w) + K4*Σ(I²) + K5*Σ(w²)
+//   下地 0-200rad/s RMSE=1.8W; 高速段(悬空验证)600-800rad/s 无偏
+//   注: K0 已是每电机常数, 无需 -3*K0 修正 (已置 0)
 float poly_coeffs[6] = {
-	    3.641922f,   // K0
-	   -0.017876f,   // K1
-	   -0.000042f,   // K2
-	    0.017527f,   // K3
-	    0.136120f,   // K4
-	    0.000026f    // K5
+	    1.042922f,   // K0
+	   -0.476074f,   // K1
+	    0.003207f,   // K2
+	    0.017505f,   // K3
+	    0.128760f,   // K4
+	    0.000017f    // K5
 	};
 // ========== 功率校准扫频测试结束 ==========
 
@@ -371,7 +381,7 @@ osDelay(500);
     //                 + poly_coeffs[4] * I * I
     //                 + poly_coeffs[5] * omega * omega;
     //     // VOFA列: [P_in(功率计), omega, I, sweep_target, P_est(模型), 0]
-    //     vofa_send(P_in, omega, I, sweep_target, P_est, 0.0f);
+    //     vofa_send9(P_in, omega, I, sweep_target, P_est, 0.0f, 0.0f, 0.0f, 0.0f);
 
     //     osDelay(1);
     //     continue; // 跳过正常遥控逻辑
@@ -500,28 +510,29 @@ osDelay(1);
 	        I_other[i] = 0.0f;                                       // 无前馈
 	    }
 
-	    // CorrectionConstant = 3*K0, 补偿模型与真实功率偏差
+	    // CorrectionConstant: 新系数(整车拟合)已无偏, 4*K0≈2.6W 已等于空载功率, 修正项置 0
 	    chassis_power_ctrl.DecayingCurrent(
 	        I, V, poly_coeffs, I_other,
-	        -3.0f * poly_coeffs[0],   // CorrectionConstant ≈ 10.7W
+	        0.0f,   // CorrectionConstant = 0
 	        PowerMax
 	    );
 
 	    // 6. 物理电流 → raw, 覆写 motor_output
-//	     for (int i = 0; i < 4; i++) {
-//	         motor_output[i] = chassis_power_ctrl.getCurrentCalculate(i) * (16384.0f / 20.0f);
-//	     }
+	     for (int i = 0; i < 4; i++) {
+	         motor_output[i] = chassis_power_ctrl.getCurrentCalculate(i) * (16384.0f / 20.0f);
+	     }
 	}
 	// ========== 功率控制结束 ==========
 		// 用衰减后的电流重算功率，用于VOFA对比预测功率 vs 衰减后实际功率
-		float post_power = 0.0f;
+		float post_power = 0.0f;   // 局部变量, 每周期清零再累加 (勿改全局, 否则跨周期累积)
 		for (int i = 0; i < 4; i++) {
 		    float I_post = motor_output[i] * (20.0f / 16384.0f);
 		    float w = chassis_motor.getVelocityRads(i + 1);
 		    post_power += poly_coeffs[0] + poly_coeffs[1]*I_post + poly_coeffs[2]*w
 		                + poly_coeffs[3]*I_post*w + poly_coeffs[4]*I_post*I_post + poly_coeffs[5]*w*w;
 		}
-		post_power += -3.0f * poly_coeffs[0]; // CorrectionConstant
+		chassis_power_pred = post_power;   // 保存预测功率到全局变量 (赋值, 非累加!)
+		// post_power += -3.0f * poly_coeffs[0]; // 新系数已无偏, 不再修正
 
             for (int i = 0; i < 4; i++) {
     // motor_target_speed[i] = ik.GetMotor(i);
@@ -538,10 +549,19 @@ osDelay(1);
  ChassisMotorSendCANChecked();  //就是将chassis_motor.sendCAN()打包成可以检查返回值的函数
 
            
-       //4. VOFA: pre_I, post_I, PowerTotal(预测), post_power(衰减后), PowerMax, eta*100
-	       vofa_send(motor_target_speed[0], current_speed_rads[0],
-	                 chassis_power_ctrl.getPowerTotal(), post_power,
-	                 energy_ring.GetPowerMax(), chassis_power_ctrl.getEta() * 100.0f);
+       //4. VOFA 实车对比 (10通道): I0=功率计实测, I1=模型预测, I2~I9=4电机(ω,I)
+       //   下地跑时看 I0 vs I1 是否贴合
+       //   需要重新录制拟合数据时, 切回下方 vofa_send9 采集模式
+       vofa_send10(PowerData.power, post_power,
+                   chassis_motor.getVelocityRads(1), chassis_motor.getCurrent(1),
+                   chassis_motor.getVelocityRads(2), chassis_motor.getCurrent(2),
+                   chassis_motor.getVelocityRads(3), chassis_motor.getCurrent(3),
+                   chassis_motor.getVelocityRads(4), chassis_motor.getCurrent(4));
+       // vofa_send9(PowerData.power,   // 9通道采集模式 (用于 power_predict.py 拟合)
+       //            chassis_motor.getVelocityRads(1), chassis_motor.getCurrent(1),
+       //            chassis_motor.getVelocityRads(2), chassis_motor.getCurrent(2),
+       //            chassis_motor.getVelocityRads(3), chassis_motor.getCurrent(3),
+       //            chassis_motor.getVelocityRads(4), chassis_motor.getCurrent(4));
 // 修复后：加上了取地址符 &
 //HAL_UART_Transmit_DMA(&huart6, (const uint8_t*)&yaw_offset_rad, sizeof(yaw_offset_rad));
 
@@ -572,24 +592,51 @@ osDelay(1);
 }
 
 //开vofa软件的justfloat模式
-uint8_t send_str2[sizeof(float) * 8]; // 分配8个float空间（32字节）
-void vofa_send(float x1, float x2, float x3, float x4, float x5, float x6) 
+uint8_t send_str2[sizeof(float) * 11]; // 分配11个float空间（44字节，10数据+1帧尾）
+void vofa_send9(float x1, float x2, float x3, float x4, float x5, float x6, float x7, float x8, float x9)
 {
     const uint8_t sendSize = sizeof(float); // 单浮点数占4字节
 
-    // 将6个浮点数据写入缓冲区（小端模式）
+    // 将9个浮点数据写入缓冲区（小端模式）
     *((float*)&send_str2[sendSize * 0]) = x1;
     *((float*)&send_str2[sendSize * 1]) = x2;
     *((float*)&send_str2[sendSize * 2]) = x3;
     *((float*)&send_str2[sendSize * 3]) = x4;
     *((float*)&send_str2[sendSize * 4]) = x5;
     *((float*)&send_str2[sendSize * 5]) = x6;
+    *((float*)&send_str2[sendSize * 6]) = x7;
+    *((float*)&send_str2[sendSize * 7]) = x8;
+    *((float*)&send_str2[sendSize * 8]) = x9;
 
     // 写入帧尾（协议要求 0x00 0x00 0x80 0x7F）
-    *((uint32_t*)&send_str2[sizeof(float) * 6]) = 0x7F800000; // 小端存储为 00 00 80 7F
+    *((uint32_t*)&send_str2[sizeof(float) * 9]) = 0x7F800000; // 小端存储为 00 00 80 7F
 
     // 通过 UART 库发送（使用 UART3，UART6 留给裁判系统）
-    HAL::UART::Data tx_data{send_str2, sizeof(float) * 7};
+    HAL::UART::Data tx_data{send_str2, sizeof(float) * 10};
+    HAL::UART::get_uart_bus_instance().get_uart3().transmit_dma(tx_data);
+}
+
+// 10通道版: 前两通道 = 功率计实测 vs 模型预测, 后面是4电机 (w, I)
+// 用于实车下地实时对比预测准不准
+void vofa_send10(float x1, float x2, float x3, float x4, float x5, float x6, float x7, float x8, float x9, float x10)
+{
+    const uint8_t sendSize = sizeof(float); // 单浮点数占4字节
+
+    *((float*)&send_str2[sendSize * 0])  = x1;
+    *((float*)&send_str2[sendSize * 1])  = x2;
+    *((float*)&send_str2[sendSize * 2])  = x3;
+    *((float*)&send_str2[sendSize * 3])  = x4;
+    *((float*)&send_str2[sendSize * 4])  = x5;
+    *((float*)&send_str2[sendSize * 5])  = x6;
+    *((float*)&send_str2[sendSize * 6])  = x7;
+    *((float*)&send_str2[sendSize * 7])  = x8;
+    *((float*)&send_str2[sendSize * 8])  = x9;
+    *((float*)&send_str2[sendSize * 9])  = x10;
+
+    // 写入帧尾
+    *((uint32_t*)&send_str2[sizeof(float) * 10]) = 0x7F800000;
+
+    HAL::UART::Data tx_data{send_str2, sizeof(float) * 11};
     HAL::UART::get_uart_bus_instance().get_uart3().transmit_dma(tx_data);
 }
 

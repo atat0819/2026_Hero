@@ -212,6 +212,12 @@ extern "C" void remote_control_task(void *argument)
             remote.gimbal_pitch = 0.0f;
             remote.s1 = remote.s2 = 0;
             xQueueOverwrite(remoteDataQueue, &remote);
+
+            // 遥控器失联保护：拨弹轮(1)和左右摩擦轮(2/3)立刻发0电流刹车
+            friction_motor.setCAN(0, 1);  // 拨弹轮
+            friction_motor.setCAN(0, 2);  // 左摩擦轮
+            friction_motor.setCAN(0, 3);  // 右摩擦轮
+            friction_motor.sendCAN();
         }
 
         if (imu.isConnected())

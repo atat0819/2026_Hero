@@ -1,5 +1,6 @@
 #include "input_dispatcher.hpp"
 #include "../user/core/BSP/RemoteControl/DT7.hpp"
+#include "main.h"   // HAL_GetTick 消抖/视觉计时
 
 using Remote = BSP::REMOTE_CONTROL::RemoteController;
 
@@ -23,15 +24,15 @@ void InputDispatcher::Update(uint8_t s1, uint8_t s2, uint16_t keyboard,
 
     // ---- 3. 读取原始按键/鼠标状态 ----
     bool raw_r     = (keyboard & static_cast<uint16_t>(Remote::KEY_R)) != 0;
-    bool raw_t     = (keyboard & static_cast<uint16_t>(Remote::KEY_G)) != 0;
+    bool raw_g     = (keyboard & static_cast<uint16_t>(Remote::KEY_G)) != 0;
     bool raw_left  = mouse_left;
     bool raw_right = mouse_right;
 
-    // ---- 4. 消抖 ----
-    Debounce(raw_r,     prev_raw_r_,     debounce_r_,     confirmed_r_);
-    Debounce(raw_t,     prev_raw_t_,     debounce_t_,     confirmed_t_);
-    Debounce(raw_left,  prev_raw_left_,  debounce_left_,  left_button_confirmed_);
-    Debounce(raw_right, prev_raw_right_, debounce_right_, right_button_confirmed_);
+    // ---- 4. 消抖（tick 差值法，消抖时间为真实毫秒，不受调用周期抖动影响） ----
+    Debounce(raw_r,     prev_raw_r_,     stable_since_r_,     confirmed_r_);
+    Debounce(raw_g,     prev_raw_t_,     stable_since_t_,     confirmed_t_);
+    Debounce(raw_left,  prev_raw_left_,  stable_since_left_,  left_button_confirmed_);
+    Debounce(raw_right, prev_raw_right_, stable_since_right_, right_button_confirmed_);
 
     // ---- 5. 边沿检测提取（放在外侧，确保 prev 变量每帧更新） ----
     bool r_edge = DetectToggleEdge(confirmed_r_, prev_confirmed_r_);
@@ -49,24 +50,27 @@ void InputDispatcher::Update(uint8_t s1, uint8_t s2, uint16_t keyboard,
         t_single_shot_ = !t_single_shot_;
     }
 
-    // ---- 7. 视觉模式判定 ----
+    // ---- 7. 视觉模式判定（tick 差值：右键确认按下后持续按住 ≥2s 判定） ----
     if (right_button_confirmed_) {
-        if (right_hold_counter_ < VISION_HOLD_THRESHOLD) {
-            right_hold_counter_++;
+        // 首次确认按下时记录起始 tick（已按着则保持不变）
+        if (right_hold_start_tick_ == 0) {
+            right_hold_start_tick_ = HAL_GetTick();
         }
+        vision_mode_ = (HAL_GetTick() - right_hold_start_tick_) >= VISION_HOLD_THRESHOLD;
     } else {
-        right_hold_counter_ = 0;
+        right_hold_start_tick_ = 0;
+        vision_mode_ = false;
     }
-    vision_mode_ = (right_hold_counter_ >= VISION_HOLD_THRESHOLD);
 }
 
 void InputDispatcher::ResetKeyMouseState()
 {
-    // 消抖计数器归零，防止切回时残留计数导致误触发
-    debounce_r_     = 0;
-    debounce_t_     = 0;
-    debounce_left_  = 0;
-    debounce_right_ = 0;
+    // 消抖计时基准归零（统一改为当前 tick，防止切回时残留计时导致误触发）
+    const uint32_t now = HAL_GetTick();
+    stable_since_r_     = now;
+    stable_since_t_     = now;
+    stable_since_left_  = now;
+    stable_since_right_ = now;
 
     // 确认状态归零
     confirmed_r_     = false;
@@ -74,13 +78,16 @@ void InputDispatcher::ResetKeyMouseState()
     left_button_confirmed_  = false;
     right_button_confirmed_ = false;
 
-    // 视觉延时归零
-    right_hold_counter_ = 0;
+    // 视觉判定归零
+    right_hold_start_tick_ = 0;
     vision_mode_ = false;
 
     // 翻转状态重置：切出键鼠 = 摩擦轮自动关闭，重进需重新按 R 开启
     r_toggle_on_   = false;
     t_single_shot_ = true;
+
+    // 键盘位掩码清零，防止切回遥控器后残留旧值
+    keyboard_mask_ = 0;
 
     // prev 变量同步到当前已知状态，防止下次进入时 DetectToggleEdge 误判
     prev_raw_r_     = false;
@@ -91,21 +98,20 @@ void InputDispatcher::ResetKeyMouseState()
     prev_confirmed_t_ = false;
 }
 
-bool InputDispatcher::Debounce(bool raw, bool& prev_raw, uint8_t& counter, bool& confirmed)
+void InputDispatcher::Debounce(bool raw, bool& prev_raw, uint32_t& stable_since_tick, bool& confirmed)
 {
-    if (raw == prev_raw) {
-        if (counter < DEBOUNCE_THRESHOLD) {
-            counter++;
-        }
-    } else {
-        counter = 0;
+    const uint32_t now = HAL_GetTick();
+
+    // 输入状态变化 → 重新计时（初始化为 0 时也在此建立基准）
+    if (raw != prev_raw) {
+        stable_since_tick = now;
     }
     prev_raw = raw;
 
-    if (counter >= DEBOUNCE_THRESHOLD) {
+    // 状态稳定超过 DEBOUNCE_THRESHOLD 后确认（tick 无符号差值，回绕安全）
+    if ((now - stable_since_tick) >= DEBOUNCE_THRESHOLD) {
         confirmed = raw;
     }
-    return confirmed;
 }
 
 bool InputDispatcher::DetectToggleEdge(bool confirmed, bool& prev_confirmed)

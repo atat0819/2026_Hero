@@ -26,7 +26,7 @@ public:
     /// R 键翻转状态：摩擦轮+拨弹轮开关
     bool IsFrictionOn() const { return r_toggle_on_; }
 
-    /// T 键翻转状态：true=单发, false=连发
+    /// G 键翻转状态：true=单发, false=连发（DBUS 键位掩码无 T 键）
     bool IsSingleShot() const { return t_single_shot_; }
 
     /// 右键消抖后的原始状态
@@ -38,7 +38,8 @@ public:
     /// 左键消抖后是否按下
     bool IsLeftButtonPressed() const { return left_button_confirmed_; }
 
-    /// 左右键同时按下 → 发射触发
+    /// 左右键同时按下 → 发射触发（电平判断，任何模式下均可开火，
+    /// 与视觉模式解耦——不需要先进视觉就能点射）
     bool IsFireTriggered() const {
         return IsRightButtonHeld() && IsLeftButtonPressed();
     }
@@ -47,9 +48,9 @@ public:
     uint16_t GetKeyboardMask() const { return keyboard_mask_; }
 
 private:
-    /// @brief 通用消抖（计数器法）
-    /// @return 确认后的状态
-    static bool Debounce(bool raw, bool& prev_raw, uint8_t& counter, bool& confirmed);
+    /// @brief 通用消抖（tick 差值法）：输入稳定超过 DEBOUNCE_THRESHOLD 后确认状态
+    /// @param stable_since_tick 输入状态最近一次变化的 tick，消抖时间基准
+    static void Debounce(bool raw, bool& prev_raw, uint32_t& stable_since_tick, bool& confirmed);
 
     /// @brief 翻转边沿检测（仅 0→1 按下沿触发）
     static bool DetectToggleEdge(bool confirmed, bool& prev_confirmed);
@@ -64,32 +65,32 @@ private:
     bool prev_confirmed_r_ = false;
     bool prev_raw_r_ = false;
     bool confirmed_r_ = false;
-    uint8_t debounce_r_ = 0;
+    uint32_t stable_since_r_ = 0;   // R 键输入稳定的起始 tick
 
-    // T 键
+    // G 键（单发/连发切换）
     bool t_single_shot_ = true;   // 默认单发
     bool prev_confirmed_t_ = false;
     bool prev_raw_t_ = false;
     bool confirmed_t_ = false;
-    uint8_t debounce_t_ = 0;
+    uint32_t stable_since_t_ = 0;   // G 键输入稳定的起始 tick
 
     // 鼠标右键
     bool right_button_confirmed_ = false;
     bool prev_raw_right_ = false;
-    uint8_t debounce_right_ = 0;
-    uint16_t right_hold_counter_ = 0;   // 按住计时 (ms)
+    uint32_t stable_since_right_ = 0;   // 右键输入稳定的起始 tick
+    uint32_t right_hold_start_tick_ = 0;   // 右键确认按下的起始 tick（视觉判定基准）
     bool vision_mode_ = false;
 
     // 鼠标左键
     bool left_button_confirmed_ = false;
     bool prev_raw_left_ = false;
-    uint8_t debounce_left_ = 0;
+    uint32_t stable_since_left_ = 0;   // 左键输入稳定的起始 tick
 
     // 键盘位掩码
     uint16_t keyboard_mask_ = 0;
 
-    static constexpr uint8_t  DEBOUNCE_THRESHOLD    = 30;    // 消抖 30ms
-    static constexpr uint16_t VISION_HOLD_THRESHOLD  = 2000;  // 视觉延时 2000ms
+    static constexpr uint32_t DEBOUNCE_THRESHOLD    = 30;    // 消抖 30ms
+    static constexpr uint32_t VISION_HOLD_THRESHOLD = 2000;  // 视觉延时 2000ms
 };
 
 // 全局键鼠输入状态机实例（定义于 input_dispatcher.cpp），

@@ -26,9 +26,6 @@ float friction_current_speed_right = 0.0f; // 当前速度
 float left_out = 0.0f; // 左侧摩擦轮控制输出
 float right_out = 0.0f; // 右侧摩擦轮控制输出
 
-// 在 gimbal_task 外部或循环上方定义
-float last_gimbal_roll = 0.0f; // 用于边缘触发检测的上一次滚轮值
-
 // feeder_mode, friction_mode, trigger_pressed 已迁移至 FSM 内部判定
 
 void DJI3508_feedback();
@@ -80,7 +77,8 @@ friction_fsm.TIM_Calculate_PeriodElapsedCallback();
 feeder_fsm.TIM_Calculate_PeriodElapsedCallback();
 /************************************************************************************ */
 // FSM 内部自行判断模式：传入原始输入，FSM 根据 s1/s2/键鼠 自行决定
-bool is_keymouse = (RemoteData.s1 == Remote::DOWN && RemoteData.s2 == Remote::UP);
+// 键鼠判定统一走 InputDispatcher 的输入源判定，避免两处判定逻辑分裂
+bool is_keymouse = (input_dispatcher.GetSource() == InputSource::KeyMouse);
 
 Struct_Feeder_Input feeder_input = {};
 feeder_input.s1             = RemoteData.s1;
@@ -98,7 +96,12 @@ friction_input.friction_on = input_dispatcher.IsFrictionOn();
 friction_input.is_keymouse = is_keymouse;
 
 force_stop = 0;
-if (!is_keymouse)
+if (!remoteController.isConnected())
+{
+    // 遥控器失联：直接强制停止（不依赖拨杆组合）
+    force_stop = 1;
+}
+else if (!is_keymouse)
 {
     // 遥控器模式下特定挡位 = 强制停止
     if ((RemoteData.s1 == Remote::DOWN  && RemoteData.s2 == Remote::DOWN)  ||
@@ -117,7 +120,6 @@ else
     }
 }
 
-last_gimbal_roll = RemoteData.gimbal_roll;
 // 触发检测和视觉开火已迁移至 feeder_fsm 内部，gimbal_task 不再处理
 /************************************************************************************** */
     feeder_current_angle = dji3508_state[0].multi_angle;
@@ -143,6 +145,8 @@ leijia = feeder_fsm.Get_Accumulated_Angle();
     feeder_angle_pid_speed.reset();
     feeder_speed_pid_speed.reset();
     feeder_out = 0.0f;
+    left_out = 0.0f;
+    right_out = 0.0f;
 }
 else if (current_control_type == FEEDER_CONTROL_ANGLE)
 {
@@ -222,7 +226,7 @@ friction_fsm.Update(friction_input, friction_current_speed_left, friction_curren
 float left_friction_target = friction_fsm.Get_Left_Control_Output();
 float right_friction_target = friction_fsm.Get_Right_Control_Output();
 
-if (left_friction_target == 0.0f && right_friction_target == 0.0f)
+if (force_stop || (left_friction_target == 0.0f && right_friction_target == 0.0f))
 {
     left_friction_pid.reset();
     right_friction_pid.reset();
@@ -273,14 +277,15 @@ friction_motor.setCAN((int16_t)right_out, 3);
 friction_motor.sendCAN();
 /**************************************************************************** */
 //vofa_send(feeder_fsm.Get_Control_Output(),feeder_fsm.Get_Accumulated_Angle(), feeder_speed, 360, 0, 0); // 发送数据到VOFA
-vofa_send(left_friction_target, right_friction_target, friction_current_speed_left, friction_current_speed_right, left_out, right_out); // 发送数据到VOFA
-// vofa_send(feeder_fsm.Get_Accumulated_Angle(),          // ch1: 当前累积角度
-//           feeder_fsm.Get_Single_Shot_Target_Angle(),   // ch2: 单发目标角度
-//           feeder_fsm.Get_Accumulated_Angle() -
-//               feeder_fsm.Get_Single_Shot_Target_Angle(), // ch3: 角度误差（负=未到位，0=到位）
-//           feeder_speed,                                  // ch4: 当前转速
-//           (float)feeder_fsm.Get_Now_Status_Serial(),    // ch5: FSM状态 1=SINGLE_SHOT
-//           feeder_out);                                   // ch6: CAN输出电流
+vofa_send(feeder_fsm.Get_Accumulated_Angle(),          // ch1: 当前累积角度
+          feeder_fsm.Get_Single_Shot_Target_Angle(),   // ch2: 单发目标角度
+          feeder_fsm.Get_Accumulated_Angle() -
+              feeder_fsm.Get_Single_Shot_Target_Angle(), // ch3: 角度误差（负=未到位，0=到位）
+          feeder_speed,                                  // ch4: 当前转速
+          (float)feeder_fsm.Get_Now_Status_Serial(),    // ch5: FSM状态 1=SINGLE_SHOT
+          feeder_out,                                   // ch6: CAN输出电流
+          feeder_fsm.Get_Control_Output(),             // ch7: 控制目标值(° 或 RPM)
+          feeder_iq);                                   // ch8: 实际电流反馈
 
 /****************************************************************************** */
 vTaskDelay(5); // 每5ms执行一次控制循环

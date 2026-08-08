@@ -95,7 +95,7 @@ typedef struct Struct_Feeder_Input
 {
     uint8_t  s1, s2;            // 遥控器拨杆
     bool     friction_on;       // R 键状态 (InputDispatcher)
-    bool     is_single_shot;    // T 键状态 (InputDispatcher)  true=单发, false=连发
+    bool     is_single_shot;    // G 键状态 (InputDispatcher)  true=单发, false=连发（DBUS 无 T 键）
     bool     fire_triggered;    // 左右键同时按下 (InputDispatcher)
     float    scroll_value;      // 遥控器滚轮值
     bool     is_keymouse;       // 是否键鼠模式 (由 s1/s2 判定)

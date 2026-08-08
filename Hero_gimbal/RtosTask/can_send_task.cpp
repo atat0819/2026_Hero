@@ -79,10 +79,14 @@ ALG::PID::PID pitch_angle_pid(8.3f, 0.0f, 0.0f, 5000.0f, 1000.0f, 100.0f);
 ALG::PID::PID pitch_angle_to_speed_pid(4.7f, 0.02f, 0.0f, 5000.0f, 1000.0f, 100.0f);
 /********************************************************************************** */
 
-//yaw轴单速度环PID
-ALG::PID::PID yaw_single_speed_pid(3.5f, 0.05f, 0.0f, 5000.0f, 1000.0f, 100.0f);
-//pitch轴单速度环PID
-ALG::PID::PID pitch_single_speed_pid(4.5f, 0.07f, 0.0f, 5000.0f, 1000.0f, 100.0f);
+//yaw轴遥控器单速度环PID（继承原 yaw_single_speed_pid 参数，遥控器手感不变）
+ALG::PID::PID yaw_remote_speed_pid(3.5f, 0.05f, 0.0f, 5000.0f, 1000.0f, 100.0f);
+//pitch轴遥控器单速度环PID（继承原 pitch_single_speed_pid 参数，遥控器手感不变）
+ALG::PID::PID pitch_remote_speed_pid(4.5f, 0.07f, 0.0f, 5000.0f, 1000.0f, 100.0f);
+//yaw轴键鼠单速度环PID（初始参数同遥控器版，键鼠手感单独调参）
+ALG::PID::PID yaw_keymouse_speed_pid(3.5f, 0.05f, 0.0f, 5000.0f, 1000.0f, 100.0f);
+//pitch轴键鼠单速度环PID（初始参数同遥控器版，键鼠手感单独调参）
+ALG::PID::PID pitch_keymouse_speed_pid(4.5f, 0.07f, 0.0f, 5000.0f, 1000.0f, 100.0f);
 
 /*********************************************************************** */
 /*********************************************************************** */
@@ -128,7 +132,7 @@ float filted_yaw = 0.0f; // 滤波后的角度
 float filted_gyroz = 0.0f; // 滤波后的陀螺仪 z 轴角速度
 
 
-uint8_t send_str2[sizeof(float) * 8]; // 分配8个float空间（32字节）
+uint8_t send_str2[sizeof(float) * 9]; // 8个float数据 + 4字节帧尾（36字节）
 
 uint8_t yaw_mode = GIMBAL_MODE_SPEED;
 uint8_t pitch_mode = GIMBAL_MODE_SPEED;
@@ -181,7 +185,15 @@ extern "C" void HAL_CAN_ErrorCallback(CAN_HandleTypeDef *hcan) {
     if (hcan->Instance == CAN2) {
         // 如果发生溢出 (ErrorCode & HAL_CAN_ERROR_RX_FOV1)
         // 必须重启 CAN 接收或清除错误位
-        HAL_CAN_ResetError(hcan); 
+        HAL_CAN_ResetError(hcan);
+    }
+    else if (hcan->Instance == CAN1)
+    {
+        // CAN1 上挂着拨弹轮 C620 / 摩擦轮 / yaw。总线错误(尤其 bus-off)后若不复位,
+        // CAN1 永久停摆, 这些电机将永远保持最后一条指令一直转 (疯转根因之一)。
+        // 使能 ABOM: bxCAN 在 bus-off 后自动恢复; 再清错误码让 HAL 保持可用。
+        SET_BIT(hcan->Instance->MCR, CAN_MCR_ABOM);
+        HAL_CAN_ResetError(hcan);
     }
 }
 
@@ -325,10 +337,11 @@ pitch_target_angle = ImuData_user.pitch;
 
     for(;;)
     {
-         if(remoteController.get_left_y() == -1 
-         && remoteController.get_left_x() == -1 
+         if(!remoteController.isConnected() ||   // 遥控器失联
+            (remoteController.get_left_y() == -1 // 或摇杆数据全-1（解析异常，数据不可信）
+         && remoteController.get_left_x() == -1
          && remoteController.get_right_x() == -1
-         && remoteController.get_right_y() == -1
+         && remoteController.get_right_y() == -1)
         )
         {
             yaw_control_output = 0.0f;
@@ -484,7 +497,8 @@ if (yaw_gimbal_fsm.Take_Mode_Changed_Flag() != 0U)
 {
     yaw_angle_pid.reset();
     yaw_angle_to_speed_pid.reset();
-    yaw_single_speed_pid.reset();
+    yaw_keymouse_speed_pid.reset();
+    yaw_remote_speed_pid.reset();
     yaw_version_angle_pid.reset();
     yaw_version_speed_pid.reset();
     yaw_vel_ff.VelocityFeedforward(yaw_gimbal_fsm.Get_Target_Angle()); // 模式切换时预载目标角度，避免突变
@@ -496,7 +510,8 @@ if (pitch_gimbal_fsm.Take_Mode_Changed_Flag() != 0U)
 {
     pitch_angle_pid.reset();
     pitch_angle_to_speed_pid.reset();
-    pitch_single_speed_pid.reset();
+    pitch_keymouse_speed_pid.reset();
+    pitch_remote_speed_pid.reset();
     pitch_version_angle_pid.reset();
     pitch_version_speed_pid.reset();
     pitch_angle_ff.ResetState(pitch_current_speed);     // 预载当前速度，防止加速度差分尖峰
@@ -519,7 +534,8 @@ if (yaw_gimbal_fsm.Get_Control_Type() == GIMBAL_CONTROL_STOP )
     yaw_control_output = 0.0f;
     yaw_angle_pid.reset();
     yaw_angle_to_speed_pid.reset();
-    yaw_single_speed_pid.reset();
+    yaw_keymouse_speed_pid.reset();
+    yaw_remote_speed_pid.reset();
     yaw_version_angle_pid.reset();
     yaw_version_speed_pid.reset();
 }
@@ -551,10 +567,12 @@ else if (yaw_gimbal_fsm.Get_Control_Type() == GIMBAL_CONTROL_ANGLE && !imu_fault
 }
 else if (yaw_gimbal_fsm.Get_Control_Type() == GIMBAL_CONTROL_SPEED || imu_fault)
 {
-    // 正常速度模式 或 IMU故障降级：遥控器直驱单速度环
+    // 正常速度模式 或 IMU故障降级：直驱单速度环
+    // 键鼠/遥控器单速度环分开调参（is_keymouse 判定统一走 InputDispatcher）
+    const bool is_keymouse = (input_dispatcher.GetSource() == InputSource::KeyMouse);
+
     if (imu_fault && yaw_gimbal_fsm.Get_Control_Type() != GIMBAL_CONTROL_SPEED)
     {
-        bool is_keymouse = (input_dispatcher.GetSource() == InputSource::KeyMouse);
         float scale = is_keymouse ? yaw_gimbal_fsm_config.mouse_speed_scale : yaw_gimbal_fsm_config.speed_scale;
         yaw_target_speed = RemoteData.gimbal_yaw * scale;
     }
@@ -562,10 +580,15 @@ else if (yaw_gimbal_fsm.Get_Control_Type() == GIMBAL_CONTROL_SPEED || imu_fault)
     {
         yaw_target_speed = yaw_gimbal_fsm.Get_Control_Output();
     }
-    yaw_control_output = yaw_single_speed_pid.UpDate(
-        yaw_target_speed,
-        yaw_current_speed
-    );
+
+    if (is_keymouse)
+    {
+        yaw_control_output = yaw_keymouse_speed_pid.UpDate(yaw_target_speed, yaw_current_speed);
+    }
+    else
+    {
+        yaw_control_output = yaw_remote_speed_pid.UpDate(yaw_target_speed, yaw_current_speed);
+    }
 
     // IMU 故障时复位角度环PID，防止恢复时积分突变
     if (imu_fault)
@@ -583,7 +606,8 @@ if (pitch_gimbal_fsm.Get_Control_Type() == GIMBAL_CONTROL_STOP)
     pitch_control_output = 0.0f;
     pitch_angle_pid.reset();
     pitch_angle_to_speed_pid.reset();
-    pitch_single_speed_pid.reset();
+    pitch_keymouse_speed_pid.reset();
+    pitch_remote_speed_pid.reset();
     pitch_version_angle_pid.reset();
     pitch_version_speed_pid.reset();
 }
@@ -611,10 +635,12 @@ else if (pitch_gimbal_fsm.Get_Control_Type() == GIMBAL_CONTROL_ANGLE && !imu_fau
 }
 else if (pitch_gimbal_fsm.Get_Control_Type() == GIMBAL_CONTROL_SPEED || imu_fault)
 {
-    // 正常速度模式 或 IMU故障降级：遥控器直驱单速度环
+    // 正常速度模式 或 IMU故障降级：直驱单速度环
+    // 键鼠/遥控器单速度环分开调参（is_keymouse 判定统一走 InputDispatcher）
+    const bool is_keymouse = (input_dispatcher.GetSource() == InputSource::KeyMouse);
+
     if (imu_fault && pitch_gimbal_fsm.Get_Control_Type() != GIMBAL_CONTROL_SPEED)
     {
-        bool is_keymouse = (input_dispatcher.GetSource() == InputSource::KeyMouse);
         float scale = is_keymouse ? pitch_gimbal_fsm_config.mouse_speed_scale : pitch_gimbal_fsm_config.speed_scale;
         pitch_target_speed = RemoteData.gimbal_pitch * scale;
     }
@@ -622,10 +648,15 @@ else if (pitch_gimbal_fsm.Get_Control_Type() == GIMBAL_CONTROL_SPEED || imu_faul
     {
         pitch_target_speed = pitch_gimbal_fsm.Get_Control_Output();
     }
-    pitch_control_output = pitch_single_speed_pid.UpDate(
-        pitch_target_speed,
-        pitch_current_speed
-    );
+
+    if (is_keymouse)
+    {
+        pitch_control_output = pitch_keymouse_speed_pid.UpDate(pitch_target_speed, pitch_current_speed);
+    }
+    else
+    {
+        pitch_control_output = pitch_remote_speed_pid.UpDate(pitch_target_speed, pitch_current_speed);
+    }
 
     // IMU 故障时复位角度环PID，防止恢复时积分突变
     if (imu_fault)
@@ -646,9 +677,10 @@ else if (pitch_gimbal_fsm.Get_Control_Type() == GIMBAL_CONTROL_SPEED || imu_faul
 
            gimbal_motor.ctrl_Torque(2, 2, (int16_t)yaw_control_output);   // yaw   → CAN1
             gimbal_motor.ctrl_Torque(1, 1, (int16_t)pitch_control_output); // pitch → CAN2
-        //  vofa_send(pitch_target_angle,pitch_current_angle,
-        //            pitch_target_speed,pitch_current_speed,
-        //            pitch_target_speed,pitch_current_speed); // 发送数据到VOFA
+        //  vofa_send(yaw_target_angle, yaw_current_angle,        // ch1/ch2: yaw 目标/当前角度
+        //            pitch_target_angle, pitch_current_angle,    // ch3/ch4: pitch 目标/当前角度
+        //            yaw_target_speed, yaw_current_speed,        // ch5/ch6: yaw 目标/当前速度
+        //            pitch_target_speed, pitch_current_speed);   // ch7/ch8: pitch 目标/当前速度
 
          }
 
@@ -696,22 +728,24 @@ void SafetyCheck()
 
 
 //开vofa软件的justfloat模式
-void vofa_send(float x1, float x2, float x3, float x4, float x5, float x6) 
+void vofa_send(float x1, float x2, float x3, float x4, float x5, float x6, float x7, float x8)
 {
     const uint8_t sendSize = sizeof(float); // 单浮点数占4字节
 
-    // 将6个浮点数据写入缓冲区（小端模式）
+    // 将8个浮点数据写入缓冲区（小端模式）
     *((float*)&send_str2[sendSize * 0]) = x1;
     *((float*)&send_str2[sendSize * 1]) = x2;
     *((float*)&send_str2[sendSize * 2]) = x3;
     *((float*)&send_str2[sendSize * 3]) = x4;
     *((float*)&send_str2[sendSize * 4]) = x5;
     *((float*)&send_str2[sendSize * 5]) = x6;
+    *((float*)&send_str2[sendSize * 6]) = x7;
+    *((float*)&send_str2[sendSize * 7]) = x8;
 
     // 写入帧尾（协议要求 0x00 0x00 0x80 0x7F）
-    *((uint32_t*)&send_str2[sizeof(float) * 6]) = 0x7F800000; // 小端存储为 00 00 80 7F
+    *((uint32_t*)&send_str2[sizeof(float) * 8]) = 0x7F800000; // 小端存储为 00 00 80 7F
 
-    HAL::UART::Data vofa_tx_data{send_str2, sizeof(float) * 7};
+    HAL::UART::Data vofa_tx_data{send_str2, sizeof(float) * 9};
     HAL::UART::get_uart_bus_instance().get_uart6().transmit_dma(vofa_tx_data);
 }
 
@@ -769,12 +803,14 @@ static bool IMU_Fault_Protection(float &yaw_angle, float &yaw_speed,
 
         yaw_angle_pid.reset();
         yaw_angle_to_speed_pid.reset();
-        yaw_single_speed_pid.reset();
+        yaw_keymouse_speed_pid.reset();
+        yaw_remote_speed_pid.reset();
         yaw_version_angle_pid.reset();
         yaw_version_speed_pid.reset();
         pitch_angle_pid.reset();
         pitch_angle_to_speed_pid.reset();
-        pitch_single_speed_pid.reset();
+        pitch_keymouse_speed_pid.reset();
+        pitch_remote_speed_pid.reset();
         pitch_version_angle_pid.reset();
         pitch_version_speed_pid.reset();
 

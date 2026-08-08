@@ -26,6 +26,8 @@ void Class_Lob_Shot_FSM::Init()
     last_s2_         = FIRE_TRIGGER_POSITION;  // 假装上轮已在击发位, 防遥控器连接瞬间误触发
     fire_pending_    = false;
     pusher_extended_ = false;
+    fire_timer_      = 0U;
+    opening_mV_      = static_cast<uint16_t>(TARGET_OPENING_PERCENT * 50.0f + 0.5f);  // % → mV
     output_ = {false, true, 0U};
 }
 
@@ -72,33 +74,19 @@ void Class_Lob_Shot_FSM::Update(const Struct_Lob_Shot_Input &input)
         return;
     }
 
-    // ---- 推杆目标 (AUTO=红外 / MANUAL=摇杆三区) ----
-    bool target_extended;
-    switch (current_mode_)
+    // ---- 手动挡: 推杆 100% 摇杆控制, 击发独立动作 (状态机不干涉推杆) ----
+    if (current_mode_ == LOB_MODE_MANUAL)
     {
-    case LOB_MODE_AUTO:
-        target_extended = input.ir_has_ball;
-        break;
-
-    case LOB_MODE_MANUAL:
-        if (input.left_x > MANUAL_DEADZONE)
+        if (Get_Now_Status_Serial() != LOB_STATE_IDLE)
         {
-            target_extended = true;
+            Set_Status(LOB_STATE_IDLE);   // 状态机回待发 (手动挡不用状态机)
         }
-        else if (input.left_x < -MANUAL_DEADZONE)
-        {
-            target_extended = false;
-        }
-        else
-        {
-            target_extended = pusher_extended_;  // 死区保持
-        }
-        break;
-
-    default:
-        target_extended = false;
-        break;
+        Update_Manual(input);
+        return;
     }
+
+    // ---- AUTO: 推杆目标 = 红外 ----
+    const bool target_extended = input.ir_has_ball;
 
     // ---- 状态流转 ----
     switch (Get_Now_Status_Serial())
@@ -111,14 +99,10 @@ void Class_Lob_Shot_FSM::Update(const Struct_Lob_Shot_Input &input)
         break;
 
     case LOB_STATE_PRIME:
-        if (!target_extended)
-        {
-            // 弹离开/摇杆左推 → 上膛取消, 丢弃拨杆请求 (防推杆未到位就击发)
-            fire_pending_ = false;
-            Set_Status(LOB_STATE_IDLE);
-        }
-        else if ((Status[LOB_STATE_PRIME].Count_Time >= PRIME_HOLD_TICKS) &&
-                 fire_pending_)              // 推杆到位 且 拨杆 → 击发
+        // 推杆锁存顶死: 红外变低不缩回 — 弹丸已被推入气室, 离开进弹口光路,
+        // 推杆是气室密封件, 保持顶死直到击发完成 (BACK) 才缩回
+        if ((Status[LOB_STATE_PRIME].Count_Time >= PRIME_HOLD_TICKS) &&
+            fire_pending_)              // 推杆到位 且 s2 拨杆 → 击发
         {
             fire_pending_ = false;
             Set_Status(LOB_STATE_FIRE);
@@ -146,8 +130,7 @@ void Class_Lob_Shot_FSM::Update(const Struct_Lob_Shot_Input &input)
 
     // ---- 输出计算 ----
     pusher_extended_ = (Get_Now_Status_Serial() == LOB_STATE_PRIME);
-    const uint16_t opening_mV =
-        static_cast<uint16_t>(TARGET_OPENING_PERCENT * 50.0f + 0.5f);  // % → mV
+    const uint16_t opening_mV = opening_mV_;  // 目标开度电压 (Init 时算好)
     switch (Get_Now_Status_Serial())
     {
     case LOB_STATE_IDLE:
@@ -160,10 +143,45 @@ void Class_Lob_Shot_FSM::Update(const Struct_Lob_Shot_Input &input)
         output_ = {true, false, 0U};            // 击发: 顶死 + 断气源 + 0V
         break;
     case LOB_STATE_BACK:
-        output_ = {false, true, opening_mV};    // 复位: 缩杆 + 恢复充压
+        output_ = {true, true, opening_mV};     // 复位: 推杆保持顶死 + 恢复充压, 计时到后缩回
         break;
     default:
         break;
+    }
+}
+
+// ============================================================================
+// 手动挡: 推杆 100% 摇杆控制, 击发 = s2 独立动作 (不影响推杆)
+// 状态机在手动挡不参与 — 推杆只跟摇杆 (顶死保持由摇杆死区决定),
+// 击发只是"电磁阀1关 + 比例阀0V"持续 FIRE_HOLD_TICKS, 不碰推杆
+// ============================================================================
+void Class_Lob_Shot_FSM::Update_Manual(const Struct_Lob_Shot_Input &input)
+{
+    // 推杆: 摇杆三区直接控制 (右推顶死 / 左推缩回 / 死区保持)
+    if (input.left_x > MANUAL_DEADZONE)
+    {
+        pusher_extended_ = true;
+    }
+    else if (input.left_x < -MANUAL_DEADZONE)
+    {
+        pusher_extended_ = false;
+    }
+
+    // 击发: s2 拨杆 → 击发动作计时 (推杆保持摇杆状态, 不受影响)
+    if (fire_pending_)
+    {
+        fire_pending_ = false;
+        fire_timer_ = FIRE_HOLD_TICKS;
+    }
+
+    if (fire_timer_ > 0U)
+    {
+        fire_timer_--;
+        output_ = {pusher_extended_, false, 0U};          // 击发中: 断气 + 0V
+    }
+    else
+    {
+        output_ = {pusher_extended_, true, opening_mV_};  // 正常: 充压保持
     }
 }
 
