@@ -38,6 +38,7 @@ void Class_Feeder_FSM::Init()
     angle_initialized            = 0;
     single_shot_target_locked    = 0;
     manual_reverse_target_locked = 0;
+    single_shot_stall_ticks      = 0;
 }
 
 // ============================================================================
@@ -60,14 +61,42 @@ float Class_Feeder_FSM::Calculate_Single_Shot_Target() const
 // ============================================================================
 // 到位判定
 // ============================================================================
-bool Class_Feeder_FSM::Is_Single_Shot_Finished() const
+bool Class_Feeder_FSM::Is_Single_Shot_Finished(float current_speed)
 {
-    return fabs(single_shot_target_angle - accumulated_angle) <= SINGLE_SHOT_FINISH_THRESHOLD;
+    const float single_shot_error = fabs(single_shot_target_angle - accumulated_angle);
+
+    // 正常到位: 误差与转速双条件 (原逻辑)
+    if (single_shot_error <= SINGLE_SHOT_FINISH_THRESHOLD &&
+        fabs(current_speed) <= SINGLE_SHOT_FINISH_SPEED_RPM)
+    {
+        single_shot_stall_ticks = 0;
+        return true;
+    }
+
+    // 卡止早退: 转子停死(连续低速N周期)但误差仍超窗 → 物理卡止, 等待无意义
+    // 实测会出现转子停在误差阈值边缘(如53° > 50°)的情况, 双条件永远不满足,
+    // 只能干等1s超时; 这里直接判定到位, 进冷却后记录残差给相位修正
+    if (single_shot_error > SINGLE_SHOT_FINISH_THRESHOLD &&
+        fabs(current_speed) <= SINGLE_SHOT_STALL_SPEED_RPM)
+    {
+        if (++single_shot_stall_ticks >= SINGLE_SHOT_STALL_TICKS)
+        {
+            single_shot_stall_ticks = 0;
+            return true;
+        }
+    }
+    else
+    {
+        single_shot_stall_ticks = 0;
+    }
+
+    return false;
 }
 
-bool Class_Feeder_FSM::Is_Manual_Reverse_Finished() const
+bool Class_Feeder_FSM::Is_Manual_Reverse_Finished(float current_speed) const
 {
-    return fabs(manual_reverse_target_angle - accumulated_angle) <= SINGLE_SHOT_FINISH_THRESHOLD;
+    return fabs(manual_reverse_target_angle - accumulated_angle) <= SINGLE_SHOT_FINISH_THRESHOLD &&
+           fabs(current_speed) <= SINGLE_SHOT_FINISH_SPEED_RPM;
 }
 
 // ============================================================================
@@ -249,7 +278,7 @@ void Class_Feeder_FSM::Update(const Struct_Feeder_Input &input,
         {
             manual_reverse_pending = 0;
             single_shot_phase_correction = 0.0f;
-            manual_reverse_target_angle = accumulated_angle - SINGLE_SHOT_ANGLE;
+            manual_reverse_target_angle = accumulated_angle + MANUAL_REVERSE_ANGLE;
             manual_reverse_target_locked = 1;
             Set_Status(FEEDER_MANUAL_REVERSE);
         }
@@ -278,7 +307,7 @@ void Class_Feeder_FSM::Update(const Struct_Feeder_Input &input,
         control_type  = FEEDER_CONTROL_ANGLE;
         control_output = single_shot_target_angle;
 
-        if (Is_Single_Shot_Finished() ||
+        if (Is_Single_Shot_Finished(current_speed) ||
             Status[FEEDER_SINGLE_SHOT].Count_Time >= SINGLE_SHOT_TIMEOUT_COUNT)
         {
             Set_Status(FEEDER_SINGLE_COOLDOWN);
@@ -301,13 +330,13 @@ void Class_Feeder_FSM::Update(const Struct_Feeder_Input &input,
     case FEEDER_MANUAL_REVERSE:
         if (manual_reverse_target_locked == 0U)
         {
-            manual_reverse_target_angle = accumulated_angle - SINGLE_SHOT_ANGLE;
+            manual_reverse_target_angle = accumulated_angle + MANUAL_REVERSE_ANGLE;
             manual_reverse_target_locked = 1;
         }
         control_type  = FEEDER_CONTROL_ANGLE;
         control_output = manual_reverse_target_angle;
 
-        if (Is_Manual_Reverse_Finished() ||
+        if (Is_Manual_Reverse_Finished(current_speed) ||
             Status[FEEDER_MANUAL_REVERSE].Count_Time >= MANUAL_REVERSE_TIMEOUT_COUNT)
         {
             Set_Status(FEEDER_STOP);

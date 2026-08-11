@@ -122,8 +122,8 @@ public:
 private:
     void Update_Accumulated_Angle(float feeder_current_angle);  // 接收电机层多圈角度
     float Calculate_Single_Shot_Target() const;                 // 当前角度 + 单发角度 + 小范围相位修正
-    bool Is_Single_Shot_Finished()    const;                     // 单发到位判定
-    bool Is_Manual_Reverse_Finished() const;                     // 反转到位判定
+    bool Is_Single_Shot_Finished(float current_speed);   // 单发到位判定(误差+转速双条件 / 卡止停稳早退)
+    bool Is_Manual_Reverse_Finished(float current_speed) const;  // 反转到位判定(误差+转速双条件)
 
 private:
     // ---- 输出变量 ----
@@ -149,6 +149,7 @@ private:
     // ---- 状态标志 ----
     uint8_t angle_initialized          = 0; // 角度初始化完成标志
     uint8_t single_shot_target_locked  = 0; // 单发目标角度已锁定 (防止进入时重复计算)
+    uint8_t single_shot_stall_ticks    = 0; // 卡止早退: 转子低速连续周期计数
     uint8_t manual_reverse_target_locked = 0; // 反转目标角度已锁定
 
     // ======================================================================
@@ -156,14 +157,28 @@ private:
     // ======================================================================
 
     // 单发弹丸对应的电机轴转动角度 (°)
-    // 计算: 拨弹轮 1/8 圈 = 45°, 减速比 2.75×19 = 52.25
-    // 45° × 减速比 / 外传比 = ... 当前值: -3060
+    // 计算: 拨弹轮 1/6 圈 = 60° (6 槽, 每槽 1 颗弹), 减速比 51
+    // 60° × 51 = 3060 = 正好推进 1 颗弹
     static constexpr float SINGLE_SHOT_ANGLE = -(60.0 * 51.0f);
     //static constexpr float SINGLE_SHOT_ANGLE = -(36.0 * 1.66f);
 
-    // 单发到位判定阈值 (°) — 当前角度与目标角度的误差小于此值即认为完成
-    // PID 调好后可收紧到 10~30
-    static constexpr float SINGLE_SHOT_FINISH_THRESHOLD = 250.0f;
+    // 手动反转/退弹行程 (电机轴 °) — 方向与发射相反(+)，量远小于一发行程
+    // 机械限制：拨弹轮轴只能退 4°，4° × 减速比 51 = 204°
+    static constexpr float MANUAL_REVERSE_ANGLE = (4.0f * 51.0f);
+
+    // 单发到位判定阈值 (°) — 误差小于此值 且 转速低于 FINISH_SPEED 才认为完成
+    // 只判误差会在大转速下误判"到位"（250°阈值时退出转速平均-1400RPM），
+    // 双条件保证转子真正停下来才进冷静期，抱角只做巩固不做补救
+    static constexpr float SINGLE_SHOT_FINISH_THRESHOLD = 50.0f;
+
+    // 单发到位判定转速阈值 (RPM) — |转速|低于此值才认为到位
+    static constexpr float SINGLE_SHOT_FINISH_SPEED_RPM = 300.0f;
+
+    // 卡止早退: 转子停死(低速持续N周期)但误差仍超窗 → 视为到位
+    // 处理"转子停在误差阈值边缘(如53° > 50°)却要等满1s超时"的情况:
+    // 弹丸实际已推出, 等待无意义, 直接进冷却并记录残差给相位修正
+    static constexpr float SINGLE_SHOT_STALL_SPEED_RPM = 50.0f; // 停死判定转速 (RPM)
+    static constexpr uint8_t SINGLE_SHOT_STALL_TICKS = 10;      // 连续低速周期数 (10×5ms=50ms)
 
     // ROLLBACK_MARKER_SINGLE_SHOT_PHASE_CORRECTION_BEGIN
     // 上一发最终误差绝对值不超过该转子角时, 下一发反向小修正; 超过则认为异常, 不补偿。

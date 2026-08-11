@@ -341,41 +341,55 @@ namespace Alg::Feedforward
             /**
              * @brief 构造函数
              * @param friction_value_ 摩擦力补偿值 与控制器输出同量纲
+             * @param deadband_ 目标值死区(与target同量纲)，死区内线性过渡，防止过零抖颤；0=无死区(硬开关)
              */
-            Friction(float friction_value_)
+            Friction(float friction_value_, float deadband_ = 0.0f)
+                : friction_value(friction_value_),
+                  deadband(deadband_ > 0.0f ? deadband_ : 0.0f),
+                  feedforward(0.0f)
             {
-                friction_value = friction_value_;
-                feedforward = 0.0f;
             }
 
             /**
              * @brief 计算摩擦力前馈值
              * @param target 目标值 无单位限制
-             * 
-             * 根据目标值正负方向施加摩擦力补偿
+             *
+             * 根据目标值正负方向施加摩擦力补偿。
+             * |target| > deadband 时全力补偿(突破静摩擦)；死区内线性过渡，
+             * 避免误差过零时补偿突跳导致云台在目标点附近抖颤。
              */
             void FrictionFeedforward(float target)
             {
-                if (target > 0.0f) {
+                if (target > deadband)
+                {
                     feedforward = friction_value;
-                } else if (target < 0.0f) {
+                }
+                else if (target < -deadband)
+                {
                     feedforward = -friction_value;
-                } else {
+                }
+                else if (deadband > 0.0f)
+                {
+                    feedforward = friction_value * (target / deadband);
+                }
+                else
+                {
                     feedforward = 0.0f;
                 }
             }
 
             /**
              * @brief 获取前馈输出值
-             * @return 前馈输出值 
+             * @return 前馈输出值
              */
-            float getFeedforward()
+            float getFeedforward() const
             {
                 return feedforward;
             }
 
         private:
             float friction_value;   // 摩擦力补偿值
+            float deadband;         // 目标值死区，死区内线性过渡
             float feedforward;      // 前馈输出
     };
 

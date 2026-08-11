@@ -34,8 +34,8 @@ static float Brake_Friction_To_Stop(float speed);
 Class_Feeder_FSM feeder_fsm;
 Class_Friction_FSM friction_fsm;
 
-ALG::PID::PID feeder_angle_pid(2.5f, 0.00f, 0.0f, 10000.0f, 1000.0f, 100.0f);
-ALG::PID::PID feeder_speed_pid(1.2f, 0.02f, 0.0f, 16384.0f, 1000.0f, 100.0f);
+ALG::PID::PID feeder_angle_pid(3.6f, 0.0f, 1.3f, 10000.0f, 1000.0f, 100.0f);
+ALG::PID::PID feeder_speed_pid(3.6f, 0.0f, 0.6f, 16384.0f, 1000.0f, 100.0f);
 ALG::PID::PID feeder_angle_pid_speed(2.5f, 0.00f, 0.0f, 5000.0f, 1000.0f, 100.0f);
 ALG::PID::PID feeder_stop_pid(0.0f, 0.00f, 0.0f, 20000.0f, 1000.0f, 100.0f);
 
@@ -277,15 +277,17 @@ friction_motor.setCAN((int16_t)right_out, 3);
 friction_motor.sendCAN();
 /**************************************************************************** */
 //vofa_send(feeder_fsm.Get_Control_Output(),feeder_fsm.Get_Accumulated_Angle(), feeder_speed, 360, 0, 0); // 发送数据到VOFA
-vofa_send(feeder_fsm.Get_Accumulated_Angle(),          // ch1: 当前累积角度
-          feeder_fsm.Get_Single_Shot_Target_Angle(),   // ch2: 单发目标角度
-          feeder_fsm.Get_Accumulated_Angle() -
-              feeder_fsm.Get_Single_Shot_Target_Angle(), // ch3: 角度误差（负=未到位，0=到位）
-          feeder_speed,                                  // ch4: 当前转速
-          (float)feeder_fsm.Get_Now_Status_Serial(),    // ch5: FSM状态 1=SINGLE_SHOT
-          feeder_out,                                   // ch6: CAN输出电流
-          feeder_fsm.Get_Control_Output(),             // ch7: 控制目标值(° 或 RPM)
-          feeder_iq);                                   // ch8: 实际电流反馈
+//vofa_send(feeder_fsm.Get_Accumulated_Angle(),          // ch1: 当前累积角度
+//          feeder_fsm.Get_Single_Shot_Target_Angle(),   // ch2: 单发目标角度
+//          feeder_fsm.Get_Accumulated_Angle() -
+//              feeder_fsm.Get_Single_Shot_Target_Angle(), // ch3: 角度误差（负=未到位，0=到位）
+//          feeder_speed,                                  // ch4: 当前转速
+//          (float)feeder_fsm.Get_Now_Status_Serial(),    // ch5: FSM状态 1=SINGLE_SHOT
+//          feeder_out,                                   // ch6: CAN输出电流
+//          feeder_fsm.Get_Control_Output(),             // ch7: 控制目标值(° 或 RPM)
+//          feeder_iq,                                   // ch8: 实际电流反馈
+//          friction_current_speed_left,                 // ch9: 左摩擦轮转速(RPM)
+//          friction_current_speed_right);               // ch10: 右摩擦轮转速(RPM)
 
 /****************************************************************************** */
 vTaskDelay(5); // 每5ms执行一次控制循环
@@ -311,13 +313,12 @@ if (motor_id == 1) {
 
 float hz_to_rotor_angle_per_frame(float fire_hz)
 {
-    const float slots_per_rotation = 8.0f;
-    const float angle_per_slot = 360.0f / slots_per_rotation; // 45 deg
-    const float external_reduction = 2.75f;
-    const float internal_reduction = 19.0f;
+    const float slots_per_rotation = 6.0f;
+    const float angle_per_slot = 360.0f / slots_per_rotation; // 60 deg
+    const float reduction_ratio = 51.0f;
     const float control_period = 0.005f;  // 与 vTaskDelay(5) 一致
 
-    return fire_hz * angle_per_slot * external_reduction * internal_reduction * control_period;
+    return fire_hz * angle_per_slot * reduction_ratio * control_period;
 }
 
 static float Brake_Friction_To_Stop(float speed)

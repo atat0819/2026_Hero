@@ -64,21 +64,30 @@ CAN_TxHeaderTypeDef txHeader;
 CAN_RxHeaderTypeDef rxHeader0, rxHeader1;
 
 /******************************************************************************** */
+// ============ 角度双环（普通角度模式：外环角度PID → 目标速度，内环速度PID → 扭矩） ============
 // yaw轴角度环外环PID
-ALG::PID::PID yaw_angle_pid(8.2f, 0.0f, 0.0f, 5000.0f, 1000.0f, 100.0f);
+ALG::PID::PID yaw_angle_pid(12.4f, 0.0f, 0.0f, 5000.0f, 1000.0f, 100.0f);
 // yaw轴角度环内环PID
-ALG::PID::PID yaw_angle_to_speed_pid(2.7f, 0.04f, 0.0f, 5000.0f, 1000.0f, 100.0f);
-// yaw轴速度前馈（k_vel 需根据实际响应调参，dt=0.001 对应 1kHz 控制周期）
-Alg::Feedforward::Velocity yaw_vel_ff(0.0f, 0.001f);
-// 普通角度环前馈：摩擦+惯量全补偿（kJ, dt, viscous, coulomb）
-Alg::Feedforward::GimbalFullCompensation yaw_angle_ff(0.0f, 0.001f, 0.1f, 15.0f);
-Alg::Feedforward::GimbalFullCompensation pitch_angle_ff(0.001f, 0.001f, 0.18f, 18.0f);
-//pitch轴角度环外环PID
+ALG::PID::PID yaw_angle_to_speed_pid(3.5f, 0.04f, 0.0f, 5000.0f, 1000.0f, 100.0f);
+// pitch轴角度环外环PID
 ALG::PID::PID pitch_angle_pid(8.3f, 0.0f, 0.0f, 5000.0f, 1000.0f, 100.0f);
 // pitch轴角度环内环PID
 ALG::PID::PID pitch_angle_to_speed_pid(4.7f, 0.02f, 0.0f, 5000.0f, 1000.0f, 100.0f);
+// 角度模式前馈：控制周期 1 ms，输出量纲为 LK4005 扭矩命令。
+Alg::Feedforward::Velocity yaw_angle_velocity_ff(
+    0.0f, 0.001f);
+Alg::Feedforward::Friction yaw_angle_friction_ff(
+    0.0f, 4.0f);
+Alg::Feedforward::GimbalFullCompensation yaw_angle_dynamics_ff(
+    0.0f, 0.001f, 0.0f, 0.0f);
+// Pitch 角度模式前馈：仅保留惯量项，静摩擦由独立前馈处理。
+Alg::Feedforward::GimbalFullCompensation pitch_angle_dynamics_ff(
+    0.001f, 0.001f, 0.0f, 0.0f);
+Alg::Feedforward::Friction pitch_angle_friction_ff(
+    0.0f, 3.0f);
 /********************************************************************************** */
 
+// ============ 速度单环（遥控器/键鼠直驱速度控制） ============
 //yaw轴遥控器单速度环PID（继承原 yaw_single_speed_pid 参数，遥控器手感不变）
 ALG::PID::PID yaw_remote_speed_pid(3.5f, 0.05f, 0.0f, 5000.0f, 1000.0f, 100.0f);
 //pitch轴遥控器单速度环PID（继承原 pitch_single_speed_pid 参数，遥控器手感不变）
@@ -87,21 +96,29 @@ ALG::PID::PID pitch_remote_speed_pid(4.5f, 0.07f, 0.0f, 5000.0f, 1000.0f, 100.0f
 ALG::PID::PID yaw_keymouse_speed_pid(3.5f, 0.05f, 0.0f, 5000.0f, 1000.0f, 100.0f);
 //pitch轴键鼠单速度环PID（初始参数同遥控器版，键鼠手感单独调参）
 ALG::PID::PID pitch_keymouse_speed_pid(4.5f, 0.07f, 0.0f, 5000.0f, 1000.0f, 100.0f);
+/********************************************************************************** */
 
-/*********************************************************************** */
-/*********************************************************************** */
-// yaw轴角度环外环PID
-ALG::PID::PID yaw_version_angle_pid(0.0f, 0.0f, 0.05f, 300.0f, 1000.0f, 100.0f);
-// yaw轴角度环外环PID
-ALG::PID::PID yaw_version_speed_pid(0.0f, 0.0f, 0.0f, 5000.0f, 1000.0f, 100.0f);
-// yaw轴角度环外环
-ALG::PID::PID pitch_version_angle_pid(0.0f, 0.0f, 0.0f, 200.0f, 1000.0f, 100.0f);
-// yaw轴角度环外环PID
+// ============ 视觉模式（独立 PID 与前馈状态，防止与普通角度模式共用微分历史） ============
+// yaw 视觉角度环外环PID
+ALG::PID::PID yaw_version_angle_pid(22.0f, 0.0f, 0.0f, 2000.0f, 1000.0f, 100.0f);
+// yaw 视觉角度环内环PID
+ALG::PID::PID yaw_version_speed_pid(4.0f, 0.0f, 0.0f, 5000.0f, 1000.0f, 100.0f);
+// pitch 视觉角度环外环PID（暂未启用，全零）
+ALG::PID::PID pitch_version_angle_pid(0.0f, 0.0f, 0.0f, 2000.0f, 1000.0f, 100.0f);
+// pitch 视觉角度环内环PID（暂未启用，全零）
 ALG::PID::PID pitch_version_speed_pid(0.0f, 0.0f, 0.0f, 5000.0f, 1000.0f, 100.0f);
-
-// 视觉模式前馈：摩擦+惯量全补偿（kJ, dt, viscous, coulomb）
-Alg::Feedforward::GimbalFullCompensation yaw_vision_ff(0.0f, 0.001f, 0.0f, 0.0f);
-Alg::Feedforward::GimbalFullCompensation pitch_vision_ff(0.0f, 0.001f, 0.0f, 0.0f);
+// 视觉模式前馈：控制周期 1 ms，输出量纲为 LK4005 扭矩命令。
+Alg::Feedforward::Velocity yaw_vision_velocity_ff(
+    0.0f, 0.001f);
+Alg::Feedforward::Friction yaw_vision_friction_ff(
+    0.0f, 4.0f);
+Alg::Feedforward::GimbalFullCompensation yaw_vision_dynamics_ff(
+    0.0f, 0.001f, 0.0f, 0.0f);
+// Pitch 视觉模式使用独立前馈状态，参数与普通角度模式一致。
+Alg::Feedforward::GimbalFullCompensation pitch_vision_dynamics_ff(
+    0.0f, 0.001f, 0.0f, 0.0f);
+Alg::Feedforward::Friction pitch_vision_friction_ff(
+    0.0f, 3.0f);
 
 /*********************************************************************** */
 
@@ -132,7 +149,7 @@ float filted_yaw = 0.0f; // 滤波后的角度
 float filted_gyroz = 0.0f; // 滤波后的陀螺仪 z 轴角速度
 
 
-uint8_t send_str2[sizeof(float) * 9]; // 8个float数据 + 4字节帧尾（36字节）
+uint8_t send_str2[sizeof(float) * 11]; // 6个float数据 + 4字节帧尾（缓冲留余量）
 
 uint8_t yaw_mode = GIMBAL_MODE_SPEED;
 uint8_t pitch_mode = GIMBAL_MODE_SPEED;
@@ -501,9 +518,11 @@ if (yaw_gimbal_fsm.Take_Mode_Changed_Flag() != 0U)
     yaw_remote_speed_pid.reset();
     yaw_version_angle_pid.reset();
     yaw_version_speed_pid.reset();
-    yaw_vel_ff.VelocityFeedforward(yaw_gimbal_fsm.Get_Target_Angle()); // 模式切换时预载目标角度，避免突变
-    yaw_angle_ff.ResetState(yaw_current_speed);       // 预载当前速度，防止加速度差分尖峰
-    yaw_vision_ff.ResetState(yaw_current_speed);      // 预载当前速度，防止加速度差分尖峰
+    const float yaw_mode_target_angle = yaw_gimbal_fsm.Get_Target_Angle();
+    yaw_angle_velocity_ff.VelocityFeedforward(yaw_mode_target_angle);
+    yaw_vision_velocity_ff.VelocityFeedforward(yaw_mode_target_angle);
+    yaw_angle_dynamics_ff.ResetState(0.0f);
+    yaw_vision_dynamics_ff.ResetState(0.0f);
 }
 
 if (pitch_gimbal_fsm.Take_Mode_Changed_Flag() != 0U)
@@ -514,8 +533,8 @@ if (pitch_gimbal_fsm.Take_Mode_Changed_Flag() != 0U)
     pitch_remote_speed_pid.reset();
     pitch_version_angle_pid.reset();
     pitch_version_speed_pid.reset();
-    pitch_angle_ff.ResetState(pitch_current_speed);     // 预载当前速度，防止加速度差分尖峰
-    pitch_vision_ff.ResetState(pitch_current_speed);    // 预载当前速度，防止加速度差分尖峰
+    pitch_angle_dynamics_ff.ResetState(0.0f);
+    pitch_vision_dynamics_ff.ResetState(0.0f);
 }
 
 yaw_target_angle = yaw_gimbal_fsm.Get_Target_Angle();
@@ -545,24 +564,28 @@ else if (yaw_gimbal_fsm.Get_Control_Type() == GIMBAL_CONTROL_ANGLE && !imu_fault
     {
         // 视觉模式：使用视觉专用PID
         yaw_target_speed = yaw_version_angle_pid.UpDate(yaw_error, 0.0f);
-        yaw_vision_ff.MomentOfInertiaTuning(yaw_current_speed, yaw_target_speed);
+        yaw_vision_dynamics_ff.MomentOfInertiaTuning(yaw_current_speed, yaw_target_speed);
+        yaw_vision_friction_ff.FrictionFeedforward(yaw_target_speed);
+        yaw_vision_velocity_ff.VelocityFeedforward(yaw_target_angle);
         yaw_control_output = yaw_version_speed_pid.UpDate(
             yaw_target_speed,
             yaw_current_speed
-        ) + yaw_vision_ff.getTorque();
+        ) + yaw_vision_dynamics_ff.getTorque()
+          + yaw_vision_friction_ff.getFeedforward()
+          + yaw_vision_velocity_ff.getFeedforward();
     }
     else
     {
         yaw_target_speed = yaw_angle_pid.UpDate(yaw_error, 0.0f);
-        yaw_angle_ff.MomentOfInertiaTuning(yaw_current_speed, yaw_target_speed);
+        yaw_angle_dynamics_ff.MomentOfInertiaTuning(yaw_current_speed, yaw_target_speed);
+        yaw_angle_friction_ff.FrictionFeedforward(yaw_target_speed);
+        yaw_angle_velocity_ff.VelocityFeedforward(yaw_target_angle);
         yaw_control_output = yaw_angle_to_speed_pid.UpDate(
             yaw_target_speed,
             yaw_current_speed
-        ) + yaw_angle_ff.getTorque();
-
-        // 速度前馈：根据目标角度变化率直接补偿扭矩输出
-    yaw_vel_ff.VelocityFeedforward(yaw_target_angle);
-    yaw_control_output += yaw_vel_ff.getFeedforward();
+        ) + yaw_angle_dynamics_ff.getTorque()
+          + yaw_angle_friction_ff.getFeedforward()
+          + yaw_angle_velocity_ff.getFeedforward();
     }
 }
 else if (yaw_gimbal_fsm.Get_Control_Type() == GIMBAL_CONTROL_SPEED || imu_fault)
@@ -617,20 +640,24 @@ else if (pitch_gimbal_fsm.Get_Control_Type() == GIMBAL_CONTROL_ANGLE && !imu_fau
     {
         // 视觉模式：使用视觉专用PID
         pitch_target_speed = pitch_version_angle_pid.UpDate(pitch_error, 0.0f);
-        pitch_vision_ff.MomentOfInertiaTuning(pitch_current_speed, pitch_target_speed);
+        pitch_vision_dynamics_ff.MomentOfInertiaTuning(pitch_current_speed, pitch_target_speed);
+        pitch_vision_friction_ff.FrictionFeedforward(pitch_target_speed);
         pitch_control_output = pitch_version_speed_pid.UpDate(
             pitch_target_speed,
             pitch_current_speed
-        ) + pitch_vision_ff.getTorque();
+        ) + pitch_vision_dynamics_ff.getTorque()
+          + pitch_vision_friction_ff.getFeedforward();
     }
     else
     {
         pitch_target_speed = pitch_angle_pid.UpDate(pitch_error, 0.0f);
-        pitch_angle_ff.MomentOfInertiaTuning(pitch_current_speed, pitch_target_speed);
+        pitch_angle_dynamics_ff.MomentOfInertiaTuning(pitch_current_speed, pitch_target_speed);
+        pitch_angle_friction_ff.FrictionFeedforward(pitch_target_speed);
         pitch_control_output = pitch_angle_to_speed_pid.UpDate(
             pitch_target_speed,
             pitch_current_speed
-        ) + pitch_angle_ff.getTorque();
+        ) + pitch_angle_dynamics_ff.getTorque()
+          + pitch_angle_friction_ff.getFeedforward();
     }
 }
 else if (pitch_gimbal_fsm.Get_Control_Type() == GIMBAL_CONTROL_SPEED || imu_fault)
@@ -677,10 +704,15 @@ else if (pitch_gimbal_fsm.Get_Control_Type() == GIMBAL_CONTROL_SPEED || imu_faul
 
            gimbal_motor.ctrl_Torque(2, 2, (int16_t)yaw_control_output);   // yaw   → CAN1
             gimbal_motor.ctrl_Torque(1, 1, (int16_t)pitch_control_output); // pitch → CAN2
-        //  vofa_send(yaw_target_angle, yaw_current_angle,        // ch1/ch2: yaw 目标/当前角度
-        //            pitch_target_angle, pitch_current_angle,    // ch3/ch4: pitch 目标/当前角度
-        //            yaw_target_speed, yaw_current_speed,        // ch5/ch6: yaw 目标/当前速度
-        //            pitch_target_speed, pitch_current_speed);   // ch7/ch8: pitch 目标/当前速度
+        // vofa 发送: 1ms 循环里 28 字节帧 @115200 需 2.43ms, 每 10 拍(10ms)发一帧 → 100Hz
+        static uint8_t vofa_tick = 0;
+        if (++vofa_tick >= 10)
+        {
+            vofa_tick = 0;
+            vofa_send(yaw_target_angle, yaw_current_angle,        // ch1/ch2: yaw 目标/当前角度
+                      yaw_target_speed, yaw_current_speed,      // ch3/ch4: yaw 目标/当前速度
+                      pitch_target_angle, pitch_current_angle); // ch5/ch6: pitch 目标/当前角度
+        }
 
          }
 
@@ -728,24 +760,22 @@ void SafetyCheck()
 
 
 //开vofa软件的justfloat模式
-void vofa_send(float x1, float x2, float x3, float x4, float x5, float x6, float x7, float x8)
+void vofa_send(float x1, float x2, float x3, float x4, float x5, float x6)
 {
     const uint8_t sendSize = sizeof(float); // 单浮点数占4字节
 
-    // 将8个浮点数据写入缓冲区（小端模式）
+    // 将6个浮点数据写入缓冲区（小端模式）
     *((float*)&send_str2[sendSize * 0]) = x1;
     *((float*)&send_str2[sendSize * 1]) = x2;
     *((float*)&send_str2[sendSize * 2]) = x3;
     *((float*)&send_str2[sendSize * 3]) = x4;
     *((float*)&send_str2[sendSize * 4]) = x5;
     *((float*)&send_str2[sendSize * 5]) = x6;
-    *((float*)&send_str2[sendSize * 6]) = x7;
-    *((float*)&send_str2[sendSize * 7]) = x8;
 
     // 写入帧尾（协议要求 0x00 0x00 0x80 0x7F）
-    *((uint32_t*)&send_str2[sizeof(float) * 8]) = 0x7F800000; // 小端存储为 00 00 80 7F
+    *((uint32_t*)&send_str2[sizeof(float) * 6]) = 0x7F800000; // 小端存储为 00 00 80 7F
 
-    HAL::UART::Data vofa_tx_data{send_str2, sizeof(float) * 9};
+    HAL::UART::Data vofa_tx_data{send_str2, sizeof(float) * 7};
     HAL::UART::get_uart_bus_instance().get_uart6().transmit_dma(vofa_tx_data);
 }
 
