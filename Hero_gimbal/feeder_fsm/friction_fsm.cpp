@@ -35,7 +35,7 @@ static uint8_t DetermineFrictionMode(const struct Struct_Friction_Input &input)
     if (input.s1 == Remote::UP && input.s2 == Remote::DOWN)    return FRICTION_MODE_STOP;
 
     // S1中+S2中（视觉模式）：摩擦轮停止
-    if (input.s1 == Remote::MIDDLE && input.s2 == Remote::MIDDLE) return FRICTION_MODE_STOP;
+    //if (input.s1 == Remote::MIDDLE && input.s2 == Remote::MIDDLE) return FRICTION_MODE_STOP;
 
     return FRICTION_MODE_STOP; // 默认 STOP，防止误启动
 }

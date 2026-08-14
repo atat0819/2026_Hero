@@ -152,7 +152,7 @@ float chassis_power_pred = 0.0f;
 
 // ========== 功率校准扫频测试 ==========
 Alg::PowerControlTestVersion::PowerControlTestVersion sweep_tester; // 扫频信号生成器
-// 功率多项式系数: P = K0 + K1*I + K2*w + K3*I*w + K4*I*I + K5*w*w
+// Power model: P = K0 + K1*I + K2*abs(w) + K3*I*w + K4*I*I + K5*w*w
 // 整车模式拟合 (下地x4 + 悬空x1 加权合并, 剔除静止段):
 //   下地: xiadiceshi1 + dipanceshi3 + dipantest10 (带负载, 0-600rad/s)
 //   悬空: depanceshi10 (全转速 0-900rad/s, 补高速段形状)
@@ -160,13 +160,16 @@ Alg::PowerControlTestVersion::PowerControlTestVersion sweep_tester; // 扫频信
 //   下地 0-200rad/s RMSE=1.8W; 高速段(悬空验证)600-800rad/s 无偏
 //   注: K0 已是每电机常数, 无需 -3*K0 修正 (已置 0)
 float poly_coeffs[6] = {
-	    1.042922f,   // K0
-	   -0.476074f,   // K1
-	    0.003207f,   // K2
-	    0.017505f,   // K3
-	    0.128760f,   // K4
-	    0.000017f    // K5
-	};
+     0.614597983f,  // K0
+    -0.005554523f,  // K1
+     0.004789858f,  // K2, fabsf(w)
+     0.017675351f,  // K3
+     0.114952711f,  // K4
+     0.000008669f   // K5
+};
+
+// CorrectionConstant = 0.0f
+// CorrectionConstant = 0.0f
 // ========== 功率校准扫频测试结束 ==========
 
 // ========== 底盘功率控制 (衰减电流法) ==========
@@ -307,11 +310,11 @@ osDelay(500);
          //ChassisData.wz = remoteController.get_right_x() * c;
 
          // 测试模式：遥控器直接控制底盘，绕过云台CAN通信
-        //  gimbalChassis_communicate.vx = remoteController.get_left_y();
-        //  gimbalChassis_communicate.vy = remoteController.get_left_x();
-        //  gimbalChassis_communicate.s1 = remoteController.get_s1();
-        //  gimbalChassis_communicate.s2 = remoteController.get_s2();
-        //  yaw_offset_updated = true;  // 模拟云台在线，否则FSM强制STOP
+        //   gimbalChassis_communicate.vx = remoteController.get_left_y();
+        //   gimbalChassis_communicate.vy = remoteController.get_left_x();
+        //   gimbalChassis_communicate.s1 = remoteController.get_s1();
+        //   gimbalChassis_communicate.s2 = remoteController.get_s2();
+        //   yaw_offset_updated = true;  // 模拟云台在线，否则FSM强制STOP
 
 
          // 超级电容在线状态更新
@@ -373,7 +376,7 @@ osDelay(500);
     //     float I     = chassis_motor.getCurrent(4);           // 电流 (A)
     //     float omega = chassis_motor.getVelocityRads(4);      // 转子转速 (rad/s)
     //     float P_in  = PowerData.power;                       // 功率计功率 (W)
-    //     // 多项式模型估算功率: P = K0 + K1*I + K2*w + K3*I*w + K4*I² + K5*w²
+    //     // Power model: P = K0 + K1*I + K2*abs(w) + K3*I*w + K4*I² + K5*w²
     //     float P_est = poly_coeffs[0]
     //                 + poly_coeffs[1] * I
     //                 + poly_coeffs[2] * omega
@@ -436,14 +439,14 @@ if (chassis_fsm.Get_Mode() != last_mode)
            // STOP 模式：直接清零，跳过后续控制，防疯车
 if (chassis_fsm.Get_Mode() == CHASSIS_STOP)
 {
-    for (int i = 0; i < 4; i++)
-    {
-        motor_pid[i].reset();
-        chassis_motor.setCAN((int16_t)0, i + 1);
-    }
-    ChassisMotorSendCANChecked();
+   for (int i = 0; i < 4; i++)
+   {
+       motor_pid[i].reset();
+       chassis_motor.setCAN((int16_t)0, i + 1);
+   }
+   ChassisMotorSendCANChecked();
 osDelay(1);
-    continue;
+   continue;
 }
 /**************************************************************** */
         ik.OmniInvKinematics(vx_body, vy_body, wz_cmd, 0.0f, 1.0f, 1.0f);
@@ -472,7 +475,7 @@ osDelay(1);
 	    power_strategy.Update(
 	        supercap.isOnline(),                              // 超电在线状态
 	        !RM_RefereeSystemDirFlag,                         // 裁判系统在线
-	        (float)ext_power_heat_data_0x0201.chassis_power_limit,  // 裁判功率上限 (W)
+	        80,//(float)ext_power_heat_data_0x0202.chassis_power_limit,  // 裁判功率上限 (W)
 	        (float)ext_power_heat_data_0x0202.chassis_power_buffer, // 缓冲能量 (J)
 	        supercap.getEnergy()                              // 超电剩余能量 (J)
 	    );
@@ -528,7 +531,7 @@ osDelay(1);
 		for (int i = 0; i < 4; i++) {
 		    float I_post = motor_output[i] * (20.0f / 16384.0f);
 		    float w = chassis_motor.getVelocityRads(i + 1);
-		    post_power += poly_coeffs[0] + poly_coeffs[1]*I_post + poly_coeffs[2]*w
+		    post_power += poly_coeffs[0] + poly_coeffs[1]*I_post + poly_coeffs[2]*fabsf(w)
 		                + poly_coeffs[3]*I_post*w + poly_coeffs[4]*I_post*I_post + poly_coeffs[5]*w*w;
 		}
 		chassis_power_pred = post_power;   // 保存预测功率到全局变量 (赋值, 非累加!)
@@ -552,12 +555,13 @@ osDelay(1);
        //4. VOFA 实车对比 (10通道): I0=功率计实测, I1=模型预测, I2~I9=4电机(ω,I)
        //   下地跑时看 I0 vs I1 是否贴合
        //   需要重新录制拟合数据时, 切回下方 vofa_send9 采集模式
-       vofa_send10(PowerData.power, post_power,
-                   chassis_motor.getVelocityRads(1), chassis_motor.getCurrent(1),
-                   chassis_motor.getVelocityRads(2), chassis_motor.getCurrent(2),
-                   chassis_motor.getVelocityRads(3), chassis_motor.getCurrent(3),
-                   chassis_motor.getVelocityRads(4), chassis_motor.getCurrent(4));
-       // vofa_send9(PowerData.power,   // 9通道采集模式 (用于 power_predict.py 拟合)
+vofa_send10(
+    PowerData.power, post_power,
+    chassis_motor.getVelocityRads(1), motor_output[0] * (20.0f / 16384.0f),
+    chassis_motor.getVelocityRads(2), motor_output[1] * (20.0f / 16384.0f),
+    chassis_motor.getVelocityRads(3), motor_output[2] * (20.0f / 16384.0f),
+    chassis_motor.getVelocityRads(4), motor_output[3] * (20.0f / 16384.0f)
+);       // vofa_send9(PowerData.power,   // 9通道采集模式 (用于 power_predict.py 拟合)
        //            chassis_motor.getVelocityRads(1), chassis_motor.getCurrent(1),
        //            chassis_motor.getVelocityRads(2), chassis_motor.getCurrent(2),
        //            chassis_motor.getVelocityRads(3), chassis_motor.getCurrent(3),

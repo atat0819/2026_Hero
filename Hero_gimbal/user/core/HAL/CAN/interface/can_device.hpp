@@ -1,6 +1,5 @@
 #pragma once
 #include "can.h"
-#include <functional>
 
 namespace HAL::CAN
 {
@@ -22,7 +21,7 @@ struct Frame
 };
 
 // CAN接收回调函数类型
-using RxCallback = std::function<void(const Frame &)>;
+using RxCallback = void (*)(const Frame &);
 
 // CAN设备抽象接口
 class ICanDevice

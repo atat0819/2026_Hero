@@ -94,7 +94,7 @@ namespace ALG::PowerControl
                     {
                         a[i] = K[4];
                         b[i] = K[1] + K[3]*V[i];
-                        c[i] = (-rho)*this->GetPowerCalculate(i) + K[0] + K[2]*V[i] + K[5]*V[i]*V[i];
+                        c[i] = (-rho)*this->GetPowerCalculate(i) + K[0] + K[2]*fabsf(V[i]) + K[5]*V[i]*V[i];
                         delta[i] = b[i]*b[i] - 4*a[i]*c[i];
 
                         if(delta[i] < 0)
@@ -179,7 +179,7 @@ namespace ALG::PowerControl
                     {
                         A += K[4] * (I[i]+I_other[i]) * (I[i]+I_other[i]);
                         B += K[1] * (I[i]+I_other[i]) + K[3] * V[i] * (I[i]+I_other[i]);
-                        C += K[0] + K[2]*V[i] + K[5]*V[i]*V[i];
+                        C += K[0] + K[2]*fabsf(V[i]) + K[5]*V[i]*V[i];
                     }
                     
                     // 4. 常数项需要减去(最大功率+补偿值)，即等于0

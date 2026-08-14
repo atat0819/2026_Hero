@@ -687,6 +687,11 @@
               <FilePath>..\user\core\Alg\FSM\alg_fsm.cpp</FilePath>
             </File>
             <File>
+              <FileName>PowerControlBase.hpp</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\user\core\Alg\PowerControl\PowerControlBase.hpp</FilePath>
+            </File>
+            <File>
               <FileName>Filter.cpp</FileName>
               <FileType>8</FileType>
               <FilePath>..\user\core\Alg\Filter\Filter.cpp</FilePath>
@@ -700,11 +705,6 @@
               <FileName>PowerControl.hpp</FileName>
               <FileType>5</FileType>
               <FilePath>..\user\core\Alg\PowerControl\PowerControl.hpp</FilePath>
-            </File>
-            <File>
-              <FileName>PowerControlBase.hpp</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\user\core\Alg\PowerControl\PowerControlBase.hpp</FilePath>
             </File>
           </Files>
         </Group>

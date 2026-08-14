@@ -24,8 +24,8 @@ namespace ALG::PowerControl
             {
                 MotorParameter[index].CurrentCalculate = CurrentCalculate_;
                 MotorParameter[index].VelocityNow = VelocityNow_;
-                // 计算功率: P = k0 + k1*I + k2*w + k3*I*w + k4*I^2 + k5*w^2
-                MotorParameter[index].PowerCalculate = PolynomialCoefficients_[0] + CurrentCalculate_*PolynomialCoefficients_[1] + VelocityNow_*PolynomialCoefficients_[2] + CurrentCalculate_*VelocityNow_*PolynomialCoefficients_[3] + CurrentCalculate_*CurrentCalculate_*PolynomialCoefficients_[4] + VelocityNow_*VelocityNow_*PolynomialCoefficients_[5];
+                // Power model: P = k0 + k1*I + k2*abs(w) + k3*I*w + k4*I^2 + k5*w^2
+                MotorParameter[index].PowerCalculate = PolynomialCoefficients_[0] + CurrentCalculate_*PolynomialCoefficients_[1] + fabsf(VelocityNow_)*PolynomialCoefficients_[2] + CurrentCalculate_*VelocityNow_*PolynomialCoefficients_[3] + CurrentCalculate_*CurrentCalculate_*PolynomialCoefficients_[4] + VelocityNow_*VelocityNow_*PolynomialCoefficients_[5];
                 for (int i = 0; i < 6; i++)
                 {
                     MotorParameter[index].PolynomialCoefficients[i] = PolynomialCoefficients_[i];

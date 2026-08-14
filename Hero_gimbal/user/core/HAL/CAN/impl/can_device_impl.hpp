@@ -11,7 +11,6 @@
 
 #pragma once
 #include "../interface/can_device.hpp"
-#include <vector>
 
 namespace HAL::CAN
 {
@@ -42,13 +41,16 @@ class CanDevice : public ICanDevice
     void trigger_rx_callbacks(const Frame &frame) override;
 
   private:
+    static constexpr uint8_t MAX_RX_CALLBACKS = 4;
+
     CAN_HandleTypeDef *handle_;
     uint32_t filter_bank_;
     uint32_t fifo_;
     uint32_t mailbox_;
 
     // 存储注册的回调函数
-    std::vector<RxCallback> rx_callbacks_;
+    RxCallback rx_callbacks_[MAX_RX_CALLBACKS] = {};
+    uint8_t rx_callback_count_ = 0;
 
     // 配置过滤器
     void configure_filter();

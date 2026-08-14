@@ -18,8 +18,7 @@ void UartDevice::init()
 
 void UartDevice::start()
 {
-    // 启用UART中断
-    __HAL_UART_ENABLE_IT(handle_, UART_IT_RXNE);
+    // DMA receive-to-idle enables the required IDLE interrupt itself.
 }
 
 bool UartDevice::transmit(const Data &data)
@@ -108,16 +107,18 @@ bool UartDevice::receive_dma_idle(Data &data)
 
 void UartDevice::register_rx_callback(RemoteDataCallback callback)
 {
-    if (callback)
+    if (callback != nullptr && rx_callback_count_ < MAX_RX_CALLBACKS)
     {
-        rx_callbacks_.push_back(callback);
+        rx_callbacks_[rx_callback_count_] = callback;
+        rx_callback_count_++;
     }
 }
 
 void UartDevice::trigger_rx_callbacks(const Data &data)
 {
-    for (auto &callback : rx_callbacks_)
+    for (uint8_t i = 0; i < rx_callback_count_; ++i)
     {
+        RemoteDataCallback callback = rx_callbacks_[i];
         if (callback)
         {
             callback(data);
@@ -140,4 +141,3 @@ UART_HandleTypeDef *UartDevice::get_handle() const
 }
 
 } // namespace HAL::UART
-

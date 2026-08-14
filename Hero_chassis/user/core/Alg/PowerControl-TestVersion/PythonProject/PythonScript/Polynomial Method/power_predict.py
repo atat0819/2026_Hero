@@ -1,348 +1,398 @@
 # -*- coding: utf-8 -*-
-"""
-power_predict.py — 电机输入功率 6 系数拟合脚本(功率计实测数据版)
-===============================================================
+"""Fit the chassis power model used by RtosTask/can_send_task.cpp.
 
-公式: P = K0 + K1*I + K2*w + K3*I*w + K4*I^2 + K5*w^2
-       I: 电流 (A)   w: 转子转速 (rad/s)   P: 输入功率 (W)
+Firmware model, evaluated once for each motor and then summed:
+    P = K0 + K1*I + K2*abs(w) + K3*I*w + K4*I*I + K5*w*w
 
-支持两种数据模式 (NUM_MOTORS 配置):
+Supported VOFA exports:
+    calibration9: P, w1, I1, w2, I2, w3, I3, w4, I4
+    comparison10: P, P_est, w1, I1, w2, I2, w3, I3, w4, I4
 
-  1) 单电机模式 (NUM_MOTORS=1):
-     通道: [P_in, w, I, target, P_est, ...]   (6 列, 原 vofa_send)
-     拟合单电机输入功率。
-
-  2) 整车模式 (NUM_MOTORS=4, 默认):
-     通道: [P_total, w1, I1, w2, I2, w3, I3, w4, I4]   (9 列, 需 vofa_send9)
-     功率计测整车总功率, 4 个电机共享同一组系数:
-       P_total = K0*4 + K1*(ΣI) + K2*(Σw) + K3*(Σ I·w) + K4*(Σ I²) + K5*(Σ w²)
-     这与固件 can_send_task.cpp 里 post_power 的求和结构完全一致,
-     拟合出的 6 个系数可直接替换 poly_coeffs。
-
-为什么不用仓库里的 Power.py:
-    Power.py 直接把 CSV 丢进最小二乘, 不做任何数据质量检查。
-    若功率计读数不可靠 (接线/量程错误), 或工况覆盖不全 (比如空转斜坡
-    缺少"高转速+大电流"区域), 拟合出的系数必然错误, 实车预测自然对不上。
-
-本脚本的改进:
-    1. 数据质量诊断: 打印各通道统计量, 检测功率计量级是否合理
-    2. 工况覆盖检查: (w, I) 联合分布表, 一眼看出哪个区域没有数据
-    3. 异常点剔除:   按物理极限剔除不可能的点
-    4. 可选滑窗滤波: 处理 6020 直驱电机那种噪声数据
-    5. holdout 验证:  末尾 20% 数据不参与拟合, 单独评估泛化能力
-    6. 固件 P_est 对比: 日志里带 P_est 通道时自动对比新旧模型
-    7. 输出 C 宏定义, 可直接贴入 can_send_task.cpp
-
-使用方法:
-    python power_predict.py                    # 默认配置
-    python power_predict.py E:\\data.csv       # 指定 CSV 路径
-    修改下方"配置区"可调整通道映射 / 清洗参数。
-
-依赖: numpy pandas matplotlib   (pip install numpy pandas matplotlib)
+The script deliberately has no sklearn/scipy dependency.  It uses a robust
+Huber regression with ridge regularization, then converts the result back to
+the six coefficients consumed directly by the firmware.
 """
 
 import os
 import sys
-try:
-    sys.stdout.reconfigure(encoding='utf-8')  # 避免 Windows GBK 控制台中文乱码/报错
-except AttributeError:
-    pass
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib
-matplotlib.use('Agg')  # 不弹窗, 直接存图 (需要看图的去掉这行)
-import matplotlib.pyplot as plt
 
-# ============================================================
-#                      配置区
-# ============================================================
 
-CSV_PATH = r"E:\power_800.csv"   # 拟合数据 (可在命令行传入覆盖)
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
 
-NUM_MOTORS = 4     # 1 = 单电机; 4 = 整车 4 电机 (通道: P, w1, I1, w2, I2, ...)
-CH_PIN = 0         # 功率计通道 (单电机: 单电机输入功率; 整车: 整车总功率)
-CH_TGT = None      # 目标转速列 (仅画图参考, 单电机时可为 3, 整车时无, 设 None)
-CH_EST = None      # 固件 P_est 列 (可选对比, 没有就设 None; 单电机模式通常为 4)
+CSV_PATH = r"E:\power_800.csv"
+NUM_MOTORS = 4
 
-# --- 数据清洗 ---
-FILTER_WINDOW  = 0      # 滑窗均值窗口 (点数)。0 = 关闭。6020 类噪声数据建议 20~50
-DROP_HARD_LIM  = True   # 剔除物理上不可能的点 (电流/转速/功率超限)
-I_LIMIT        = 25.0   # 电流极限 (A), 3508 峰值 20A
-W_LIMIT        = 950.0  # 转速极限 (rad/s), 3508 转子约 930 rad/s
-P_LIMIT        = 2000.0 # 功率极限 (W): 整车模式给大些 (4 电机), 单电机给 ~600
+# "auto" accepts exactly 9 or 10 VOFA data columns.  Set this explicitly when
+# an export contains extra columns such as a timestamp.
+INPUT_LAYOUT = "auto"       # "auto", "calibration9", or "comparison10"
+POWER_COLUMN = 0
+ESTIMATE_COLUMN = None       # None = inferred from INPUT_LAYOUT
+FIRST_MOTOR_COLUMN = None    # None = inferred from INPUT_LAYOUT
 
-# --- 验证 ---
-VAL_FRACTION   = 0.2    # 末尾 20% 作为 holdout 验证集 (不参与拟合)
+DROP_HARD_LIMITS = True
+I_LIMIT = 25.0               # A
+W_LIMIT = 950.0              # rotor rad/s
+P_LIMIT = 2000.0             # complete chassis W
 
-# --- 物理参考 (仅打印提示用, 不参与计算) ---
-KT_REF     = 0.0105     # 3508 转子转矩常数 (Nm/A), 用于参考量级
-R_PH_REF   = 0.28       # 3508 相电阻 (Ohm), K4 拟合值应接近 3*R_PH_REF
+# Keep disabled unless every logged channel has the same known low-pass delay.
+# If enabled, filtering is causal: it never uses future samples.
+CAUSAL_FILTER_WINDOW = 0
 
-# ============================================================
-#                     核心代码
-# ============================================================
+VAL_FRACTION = 0.20          # final contiguous block; never used for tuning
+MAX_FEATURE_LAG_SAMPLES = 60 # search P[t] against motor features at t-lag
+LAG_SEARCH_FRACTION = 0.80   # only this prefix is used to choose the lag
+
+# alpha is scaled by the number of samples, making the setting stable when the
+# logging duration changes.  alpha is selected by blocked CV on training data.
+RIDGE_ALPHAS = (0.0, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1)
+CV_FOLDS = 4
+HUBER_DELTA = 1.5
+HUBER_MAX_ITER = 40
+HUBER_TOL = 1e-8
 
 
 def load_data(path):
-    """加载 VOFA+ 导出的 CSV, 返回 DataFrame"""
     if not os.path.exists(path):
-        sys.exit(f"错误: 文件不存在 - {path}")
+        sys.exit(f"CSV file does not exist: {path}")
     df = pd.read_csv(path)
-    print(f"加载文件: {path}")
-    print(f"数据形状: {df.shape[0]} 行 x {df.shape[1]} 列  (模式: {'整车 %d 电机' % NUM_MOTORS if NUM_MOTORS > 1 else '单电机'})")
-    need = 1 + 2 * NUM_MOTORS
-    if df.shape[1] < need:
-        sys.exit(f"错误: {NUM_MOTORS} 电机模式需要至少 {need} 列, 文件只有 {df.shape[1]} 列")
+    if df.empty:
+        sys.exit("CSV has no data rows.")
+    print(f"Loaded: {path}")
+    print(f"Rows: {len(df)}, columns: {df.shape[1]}")
     return df
 
 
-def extract(df):
-    """按通道映射提取物理量: 返回 (P, W, I, tgt, P_est)
-    P:  (n,)          功率计读数
-    W:  (n, NUM_MOTORS) 各电机转速
-    I:  (n, NUM_MOTORS) 各电机电流
-    """
-    def col(idx):
-        return pd.to_numeric(df.iloc[:, idx], errors='coerce').values
+def resolve_layout(column_count):
+    """Return (power column, firmware-estimate column, first motor column)."""
+    layout = INPUT_LAYOUT.lower()
+    if layout == "auto":
+        if column_count == 1 + 2 * NUM_MOTORS:
+            layout = "calibration9"
+        elif column_count == 2 + 2 * NUM_MOTORS:
+            layout = "comparison10"
+        else:
+            sys.exit(
+                "Cannot infer CSV layout. Expected 9 columns for "
+                "[P,w1,I1,...] or 10 columns for [P,P_est,w1,I1,...]. "
+                "Set INPUT_LAYOUT and the column constants for this export."
+            )
 
-    P = col(CH_PIN)
-    W = np.column_stack([col(1 + 2 * i) for i in range(NUM_MOTORS)])
-    I = np.column_stack([col(2 + 2 * i) for i in range(NUM_MOTORS)])
-    tgt = col(CH_TGT) if CH_TGT is not None else None
-    P_est = col(CH_EST) if CH_EST is not None else None
-    return P, W, I, tgt, P_est
+    if layout == "calibration9":
+        default_est, default_first = None, 1
+    elif layout == "comparison10":
+        default_est, default_first = 1, 2
+    else:
+        sys.exit("INPUT_LAYOUT must be auto, calibration9, or comparison10.")
 
-
-def diagnostics(P, W, I):
-    """打印数据统计 + 物理合理性检查"""
-    n = len(P)
-    print("\n" + "=" * 60)
-    print("数据统计")
-    print("=" * 60)
-    print(f"  功率计 P : min={np.nanmin(P):10.3f}  max={np.nanmax(P):10.3f}"
-          f"  mean={np.nanmean(P):9.3f}  std={np.nanstd(P):8.3f}  (W)")
-    for i in range(NUM_MOTORS):
-        w, Ii = W[:, i], I[:, i]
-        print(f"  电机{i+1}   w: min={np.nanmin(w):9.1f}  max={np.nanmax(w):9.1f}"
-              f"  | I: min={np.nanmin(Ii):9.2f}  max={np.nanmax(Ii):9.2f}")
-
-    # 工况覆盖检查: (|w|, |I|) 联合分布 (合并所有电机)
-    print("\n" + "=" * 60)
-    print("工况覆盖检查 ((|w|,|I|) 联合分布, 所有电机合并)")
-    print("=" * 60)
-    aw = np.concatenate([np.abs(W[:, i]) for i in range(NUM_MOTORS)])
-    aI = np.concatenate([np.abs(I[:, i]) for i in range(NUM_MOTORS)])
-    edges_w = [0, 100, 300, 500, 700, 950]
-    edges_i = [0, 2, 5, 10, 25]
-    hdr = "      " + "".join(f"I {a}-{b:>2d}A" for a, b in zip(edges_i[:-1], edges_i[1:]))
-    print(hdr)
-    for a, b in zip(edges_w[:-1], edges_w[1:]):
-        row = f"w {a:>3d}-{b:>3d} "
-        for c, d in zip(edges_i[:-1], edges_i[1:]):
-            cnt = ((aw >= a) & (aw < b) & (aI >= c) & (aI < d)).sum()
-            row += f"{cnt:>9d} "
-        print(row)
-    # 高速大电流区提示
-    hi = (aw >= 700) & (aI >= 5)
-    print(f"  高速(>700)+大电流(>5A) 点数: {hi.sum()}  "
-          f"({'充足' if hi.sum() > 200 else '⚠ 严重不足, 模型在此区域是纯外推! 需补录该工况数据'})")
-
-    # 物理合理性
-    print("\n" + "=" * 60)
-    print("物理合理性检查 (功率计量级)")
-    print("=" * 60)
-    Pp = P[~np.isnan(P)]
-    rms_p = np.sqrt(np.mean(Pp**2))
-    print(f"  功率计 RMS = {rms_p:.2f} W, 负功率(回馈)占比 {100*(Pp < -1).mean():.1f}%")
-    if rms_p < 5 and NUM_MOTORS == 1:
-        print(f"  ⚠ 功率计 RMS 只有 {rms_p:.2f} W, 量级可能不对! "
-              f"3508 正常测试应有 10W+ 量级, 请检查功率计接线/量程后再录")
-    if np.nanmax(np.abs(P)) > 1e4:
-        print(f"  ⚠ 第一列(功率计)数值范围 {np.nanmin(P):.3g} ~ {np.nanmax(P):.3g} 异常偏大!")
-        print(f"    可能 VOFA+ 导出带了时间戳/其他大数值列, 请检查导出设置/通道映射后再拟合!")
-    # 时间戳特征: 严格单调递增的列几乎不可能是功率计
-    Pn = P[~np.isnan(P)]
-    if len(Pn) > 100:
-        mono = np.mean(np.diff(Pn) >= 0)
-        if mono > 0.99:
-            print(f"  ⚠ 第一列几乎严格单调递增 (非减比例 {mono*100:.1f}%), 疑似时间戳列!")
-            print(f"    可能 VOFA+ 导出时勾选了时间列(第一列是时间, 通道整体错位)。")
-            print(f"    请在 VOFA+ 导出时去掉时间戳, 或调整通道映射后重新拟合!")
+    est = default_est if ESTIMATE_COLUMN is None else ESTIMATE_COLUMN
+    first = default_first if FIRST_MOTOR_COLUMN is None else FIRST_MOTOR_COLUMN
+    needed = first + 2 * NUM_MOTORS
+    if column_count < needed:
+        sys.exit(f"Layout needs at least {needed} columns, CSV has {column_count}.")
+    print(f"Layout: {layout}; P={POWER_COLUMN}, P_est={est}, w1={first}, I1={first + 1}")
+    return POWER_COLUMN, est, first
 
 
-def clean_data(P, W, I, P_est, tgt):
-    """异常点剔除 + 可选滤波"""
-    n0 = len(P)
-    mask = ~np.isnan(P)
-    for i in range(NUM_MOTORS):
-        mask &= ~(np.isnan(W[:, i]) | np.isnan(I[:, i]))
-    if DROP_HARD_LIM:
-        for i in range(NUM_MOTORS):
-            mask &= (np.abs(I[:, i]) <= I_LIMIT) & (np.abs(W[:, i]) <= W_LIMIT)
-        mask &= np.abs(P) <= P_LIMIT
-    P, W, I = P[mask], W[mask], I[mask]
-    if P_est is not None:
-        P_est = P_est[mask]
-    if tgt is not None:
-        tgt = tgt[mask]
-    if DROP_HARD_LIM:
-        print(f"\n[清洗] 剔除超限/无效点 {n0 - len(P)} 个 (剩余 {len(P)})")
-
-    if FILTER_WINDOW > 1:
-        s = pd.Series
-        P = s(P).rolling(FILTER_WINDOW, center=True, min_periods=1).mean().values
-        for i in range(NUM_MOTORS):
-            W[:, i] = s(W[:, i]).rolling(FILTER_WINDOW, center=True, min_periods=1).mean().values
-            I[:, i] = s(I[:, i]).rolling(FILTER_WINDOW, center=True, min_periods=1).mean().values
-        print(f"[清洗] 滑窗滤波 window={FILTER_WINDOW}")
-    return P, W, I, P_est, tgt
+def numeric_column(df, index):
+    return pd.to_numeric(df.iloc[:, index], errors="coerce").to_numpy(dtype=float)
 
 
-def build_features(W, I):
-    """整车求和结构特征矩阵:
-    [N, ΣI, Σw, Σ(I·w), Σ(I²), Σ(w²)]  — 系数即 [K0, K1, K2, K3, K4, K5]
-    """
-    sI = I.sum(axis=1)
-    sW = W.sum(axis=1)
-    sIw = (I * W).sum(axis=1)
-    sI2 = (I**2).sum(axis=1)
-    sW2 = (W**2).sum(axis=1)
-    return np.column_stack([np.full(len(I), NUM_MOTORS), sI, sW, sIw, sI2, sW2])
+def extract_data(df):
+    p_col, est_col, first = resolve_layout(df.shape[1])
+    power = numeric_column(df, p_col)
+    speed = np.column_stack([numeric_column(df, first + 2 * motor)
+                             for motor in range(NUM_MOTORS)])
+    current = np.column_stack([numeric_column(df, first + 2 * motor + 1)
+                               for motor in range(NUM_MOTORS)])
+    estimate = numeric_column(df, est_col) if est_col is not None else None
+    return power, speed, current, estimate
 
 
-def calc_power(k, W, I):
-    """整车模式: P_total = K0*N + K1*ΣI + K2*Σw + K3*ΣIw + K4*ΣI² + K5*Σw²"""
-    sI = I.sum(axis=1)
-    sW = W.sum(axis=1)
-    return (k[0] * NUM_MOTORS + k[1] * sI + k[2] * sW
-            + k[3] * (I * W).sum(axis=1)
-            + k[4] * (I**2).sum(axis=1)
-            + k[5] * (W**2).sum(axis=1))
+def clean_data(power, speed, current, estimate):
+    mask = np.isfinite(power) & np.isfinite(speed).all(axis=1) & np.isfinite(current).all(axis=1)
+    if estimate is not None:
+        # P_est is diagnostic only, therefore a missing P_est must not discard
+        # an otherwise valid fitting sample.
+        estimate = estimate.copy()
+    if DROP_HARD_LIMITS:
+        mask &= (np.abs(current) <= I_LIMIT).all(axis=1)
+        mask &= (np.abs(speed) <= W_LIMIT).all(axis=1)
+        mask &= np.abs(power) <= P_LIMIT
+
+    removed = len(power) - int(mask.sum())
+    power, speed, current = power[mask], speed[mask], current[mask]
+    estimate = estimate[mask] if estimate is not None else None
+    print(f"Valid samples: {len(power)}; removed: {removed}")
+
+    if CAUSAL_FILTER_WINDOW > 1:
+        window = CAUSAL_FILTER_WINDOW
+        power = pd.Series(power).rolling(window, min_periods=1).mean().to_numpy()
+        for motor in range(NUM_MOTORS):
+            speed[:, motor] = pd.Series(speed[:, motor]).rolling(window, min_periods=1).mean().to_numpy()
+            current[:, motor] = pd.Series(current[:, motor]).rolling(window, min_periods=1).mean().to_numpy()
+        if estimate is not None:
+            estimate = pd.Series(estimate).rolling(window, min_periods=1).mean().to_numpy()
+        print(f"Applied causal moving average, window={window}")
+    return power, speed, current, estimate
 
 
-def evaluate(P_true, P_pred):
-    """R² / RMSE / MAE / p90"""
-    err = P_true - P_pred
-    ss_res = np.sum(err**2)
-    ss_tot = np.sum((P_true - P_true.mean())**2)
-    r2 = 1 - ss_res / ss_tot if ss_tot > 0 else float('nan')
-    return r2, np.sqrt(np.mean(err**2)), np.mean(np.abs(err)), np.quantile(np.abs(err), 0.9)
+def build_features(speed, current):
+    """Exactly the same summed features as post_power in can_send_task.cpp."""
+    return np.column_stack((
+        np.full(len(current), NUM_MOTORS, dtype=float),
+        current.sum(axis=1),
+        np.abs(speed).sum(axis=1),
+        (current * speed).sum(axis=1),
+        np.square(current).sum(axis=1),
+        np.square(speed).sum(axis=1),
+    ))
 
 
-def fit_and_report(P, W, I, P_est, tgt, path):
-    """主流程: 切分 -> 拟合 -> 评估 -> 输出"""
-    n = len(P)
-    n_val = int(n * VAL_FRACTION)
-    n_train = n - n_val
-
-    P_tr, W_tr, I_tr = P[:n_train], W[:n_train], I[:n_train]
-    P_va, W_va, I_va = P[n_train:], W[n_train:], I[n_train:]
-
-    # ---- 拟合 ----
-    X_tr = build_features(W_tr, I_tr)
-    k, *_ = np.linalg.lstsq(X_tr, P_tr, rcond=None)
-
-    # ---- 评估 ----
-    P_pred_tr = calc_power(k, W_tr, I_tr)
-    P_pred_va = calc_power(k, W_va, I_va)
-    r2_tr, rmse_tr, mae_tr, p90_tr = evaluate(P_tr, P_pred_tr)
-    r2_va, rmse_va, mae_va, p90_va = evaluate(P_va, P_pred_va)
-
-    print("\n" + "=" * 60)
-    print(f"拟合结果 (训练集 {n_train} 点 / 验证集 {n_val} 点)  模式: "
-          f"{'整车' if NUM_MOTORS > 1 else '单电机'}")
-    print("=" * 60)
-    print(f"  {'':5s}  {'R2':>8s} {'RMSE(W)':>9s} {'MAE(W)':>8s} {'P90(W)':>8s}")
-    print(f"  训练  {r2_tr:8.4f} {rmse_tr:9.3f} {mae_tr:8.3f} {p90_tr:8.3f}")
-    print(f"  验证  {r2_va:8.4f} {rmse_va:9.3f} {mae_va:8.3f} {p90_va:8.3f}   <- 泛化能力看这行")
-
-    print("\n" + "=" * 60)
-    print("拟合系数 (每个电机共享同一组)")
-    print("=" * 60)
-    names = ['K0(常数)', 'K1(I)', 'K2(w)', 'K3(I*w)', 'K4(I^2)', 'K5(w^2)']
-    for nm, v in zip(names, k):
-        print(f"  {nm:10s} = {v:12.6f}")
-
-    print(f"\n  物理解释参考: K4={k[4]:.4f} (单电机铜损 3R≈{3*R_PH_REF:.2f}), "
-          f"K5={k[5]:.6f} (铁损系数, 通常很小), K0={k[0]:.4f}")
-    print(f"  固件修正项建议: CorrectionConstant = -3*K0 = {-3*k[0]:.3f}")
-
-    print("\n" + "=" * 60)
-    print("C 语言宏定义 (可直接替换 can_send_task.cpp 里的 poly_coeffs)")
-    print("=" * 60)
-    print(f"#define K0  {k[0]:.6f}f")
-    print(f"#define K1  {k[1]:.6f}f")
-    print(f"#define K2  {k[2]:.6f}f")
-    print(f"#define K3  {k[3]:.6f}f")
-    print(f"#define K4  {k[4]:.6f}f")
-    print(f"#define K5  {k[5]:.6f}f")
-    print("// P = K0 + K1*I + K2*w + K3*I*w + K4*I*I + K5*w*w")
-    print("// float poly_coeffs[6] = {K0, K1, K2, K3, K4, K5};")
-    if NUM_MOTORS > 1:
-        print("// 整车: P_total = 4*K0 + K1*ΣI + K2*Σw + K3*Σ(I*w) + K4*Σ(I²) + K5*Σ(w²)")
-        print("//       与固件 post_power 求和结构一致")
-
-    # ---- 画图 ----
-    plot_results(P, W, I, P_est, tgt, k, n_train, path)
-    return k
+def predict(coefficients, speed, current):
+    return build_features(speed, current) @ coefficients
 
 
-def plot_results(P, W, I, P_est, tgt, k, n_train, path):
-    """三合一图: 工况散点 / 预测vs实测 / 误差"""
-    plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'Arial']
-    plt.rcParams['axes.unicode_minus'] = False
-    P_pred = calc_power(k, W, I)
-    save_dir = os.path.dirname(os.path.abspath(path))
-    save_path = os.path.join(save_dir, 'power_predict_fit.png')
+def align_feature_lag(power, speed, current, estimate, lag):
+    """Align P[t] with features[t-lag]. Positive lag means P is delayed."""
+    if lag > 0:
+        return power[lag:], speed[:-lag], current[:-lag], (estimate[lag:] if estimate is not None else None)
+    if lag < 0:
+        return power[:lag], speed[-lag:], current[-lag:], (estimate[:lag] if estimate is not None else None)
+    return power, speed, current, estimate
 
-    fig, axes = plt.subplots(3, 1, figsize=(13, 12))
 
-    # 图1: 工况覆盖散点 (所有电机合并)
-    aw = np.concatenate([W[:, i] for i in range(NUM_MOTORS)])
-    aI = np.concatenate([I[:, i] for i in range(NUM_MOTORS)])
-    aP = np.tile(P, NUM_MOTORS)
-    sc = axes[0].scatter(aw, aI, c=aP, s=2, cmap='jet')
-    axes[0].set_xlabel('w (rad/s)')
-    axes[0].set_ylabel('I (A)')
-    axes[0].set_title(f'工况覆盖 (w-I 平面), 颜色=功率计 P (W), 共 {len(P)} 行 x {NUM_MOTORS} 电机')
-    fig.colorbar(sc, ax=axes[0])
+def standardized_design(features):
+    """Keep a unit intercept and standardize the five nonconstant features."""
+    mean = features[:, 1:].mean(axis=0)
+    scale = features[:, 1:].std(axis=0)
+    scale[scale < 1e-12] = 1.0
+    design = np.empty_like(features)
+    design[:, 0] = 1.0
+    design[:, 1:] = (features[:, 1:] - mean) / scale
+    return design, mean, scale
 
-    # 图2: 预测 vs 实测 (时间轴), 标注验证集
-    x = np.arange(len(P))
-    axes[1].plot(x, P, 'b-', lw=0.6, alpha=0.7, label='功率计实测 P')
-    axes[1].plot(x, P_pred, 'r--', lw=0.6, label='模型预测 P_pred')
-    if P_est is not None and np.any(np.abs(P_est) > 0):
-        axes[1].plot(x, P_est, 'g:', lw=0.6, alpha=0.8, label='固件原 P_est')
-    axes[1].axvspan(n_train, len(P), color='orange', alpha=0.15, label='验证集')
-    axes[1].set_xlabel('采样点')
-    axes[1].set_ylabel('功率 (W)')
-    axes[1].set_title('功率: 实测 vs 模型预测')
-    axes[1].legend(loc='upper right', fontsize=8)
-    axes[1].grid(alpha=0.3)
 
-    # 图3: 误差
-    err = P - P_pred
-    axes[2].plot(x, err, 'g-', lw=0.5)
-    axes[2].axhline(0, color='k', lw=0.5)
-    axes[2].axvspan(n_train, len(P), color='orange', alpha=0.15)
-    axes[2].set_xlabel('采样点')
-    axes[2].set_ylabel('误差 (W)')
-    axes[2].set_title(f'拟合误差 | RMSE={np.sqrt(np.mean(err**2)):.2f} W,  '
-                      f'P90={np.quantile(np.abs(err), 0.9):.2f} W')
-    axes[2].grid(alpha=0.3)
+def coefficients_from_standardized(beta, mean, scale):
+    coefficients = np.empty(6, dtype=float)
+    coefficients[1:] = beta[1:] / scale
+    # The firmware intercept feature is NUM_MOTORS, not a literal 1.
+    coefficients[0] = (beta[0] - np.dot(coefficients[1:], mean)) / NUM_MOTORS
+    return coefficients
 
-    plt.tight_layout()
-    plt.savefig(save_path, dpi=150)
-    print(f"\n图表已保存: {save_path}")
+
+def fit_huber_ridge(power, speed, current, alpha):
+    """Robust ridge regression; alpha regularizes only nonconstant terms."""
+    features = build_features(speed, current)
+    design, mean, scale = standardized_design(features)
+    penalty = np.diag([0.0] + [alpha * len(power)] * 5)
+    weights = np.ones(len(power), dtype=float)
+    beta = np.zeros(6, dtype=float)
+
+    for _ in range(HUBER_MAX_ITER):
+        weighted_design = design * weights[:, None]
+        lhs = design.T @ weighted_design + penalty
+        rhs = design.T @ (weights * power)
+        try:
+            next_beta = np.linalg.solve(lhs, rhs)
+        except np.linalg.LinAlgError:
+            next_beta = np.linalg.lstsq(lhs, rhs, rcond=None)[0]
+
+        residual = power - design @ next_beta
+        mad = np.median(np.abs(residual - np.median(residual)))
+        robust_scale = max(1.4826 * mad, 1e-6)
+        cutoff = HUBER_DELTA * robust_scale
+        next_weights = np.minimum(1.0, cutoff / np.maximum(np.abs(residual), 1e-12))
+        if np.max(np.abs(next_beta - beta)) < HUBER_TOL:
+            beta = next_beta
+            break
+        beta, weights = next_beta, next_weights
+    return coefficients_from_standardized(beta, mean, scale)
+
+
+def rmse(actual, predicted):
+    return float(np.sqrt(np.mean(np.square(actual - predicted))))
+
+
+def select_feature_lag(power, speed, current):
+    """Choose timing only from a prefix which excludes the final holdout."""
+    search_end = max(1000, int(len(power) * LAG_SEARCH_FRACTION))
+    search_end = min(search_end, len(power))
+    p0, w0, i0 = power[:search_end], speed[:search_end], current[:search_end]
+    split = int(len(p0) * 0.75)
+    best_lag, best_score = 0, float("inf")
+
+    for lag in range(-MAX_FEATURE_LAG_SAMPLES, MAX_FEATURE_LAG_SAMPLES + 1):
+        p, w, i, _ = align_feature_lag(p0, w0, i0, None, lag)
+        if len(p) < 200:
+            continue
+        cut = min(split, len(p) - 100)
+        coefficients = fit_huber_ridge(p[:cut], w[:cut], i[:cut], alpha=1e-3)
+        score = rmse(p[cut:], predict(coefficients, w[cut:], i[cut:]))
+        if score < best_score:
+            best_lag, best_score = lag, score
+    print(f"Selected feature lag: {best_lag:+d} samples; tuning RMSE={best_score:.3f} W")
+    return best_lag
+
+
+def select_alpha(power, speed, current):
+    """Blocked CV prevents tuning only on an adjacent, nearly identical run."""
+    folds = min(CV_FOLDS, max(2, len(power) // 500))
+    boundaries = np.linspace(0, len(power), folds + 1, dtype=int)
+    scores = []
+    for alpha in RIDGE_ALPHAS:
+        squared_error, count = 0.0, 0
+        for fold in range(folds):
+            start, end = boundaries[fold], boundaries[fold + 1]
+            train_mask = np.ones(len(power), dtype=bool)
+            train_mask[start:end] = False
+            coefficients = fit_huber_ridge(power[train_mask], speed[train_mask], current[train_mask], alpha)
+            residual = power[start:end] - predict(coefficients, speed[start:end], current[start:end])
+            squared_error += float(residual @ residual)
+            count += len(residual)
+        score = float(np.sqrt(squared_error / count))
+        scores.append(score)
+        print(f"CV alpha={alpha:.5g}: RMSE={score:.3f} W")
+    index = int(np.argmin(scores))
+    print(f"Selected ridge alpha: {RIDGE_ALPHAS[index]:.5g}")
+    return RIDGE_ALPHAS[index]
+
+
+def metrics(actual, predicted):
+    error = actual - predicted
+    ss_total = np.sum(np.square(actual - actual.mean()))
+    r2 = 1.0 - np.sum(np.square(error)) / ss_total if ss_total > 0 else float("nan")
+    under = np.maximum(error, 0.0)
+    return {
+        "r2": r2,
+        "rmse": float(np.sqrt(np.mean(np.square(error)))),
+        "mae": float(np.mean(np.abs(error))),
+        "abs_p90": float(np.quantile(np.abs(error), 0.90)),
+        "under_p95": float(np.quantile(under, 0.95)),
+        "under_max": float(np.max(under)),
+    }
+
+
+def print_metrics(name, actual, predicted):
+    result = metrics(actual, predicted)
+    print(
+        f"{name:18s} R2={result['r2']:7.4f}  RMSE={result['rmse']:7.3f} W  "
+        f"MAE={result['mae']:7.3f} W  |e|P90={result['abs_p90']:7.3f} W  "
+        f"under-P95={result['under_p95']:7.3f} W"
+    )
+    return result
+
+
+def diagnostics(power, speed, current):
+    print("\nInput ranges")
+    print(f"P: {power.min():.3f} .. {power.max():.3f} W")
+    for motor in range(NUM_MOTORS):
+        print(
+            f"M{motor + 1}: w={speed[:, motor].min():.1f} .. {speed[:, motor].max():.1f} rad/s, "
+            f"I={current[:, motor].min():.2f} .. {current[:, motor].max():.2f} A"
+        )
+    design, _, _ = standardized_design(build_features(speed, current))
+    condition = np.linalg.cond(design)
+    print(f"Standardized feature condition number: {condition:.2e}")
+    if condition > 1e4:
+        print("WARNING: features are strongly correlated; collect more independent speed/current conditions.")
+
+
+def plot_results(path, power, speed, current, estimate, prediction, train_count, lag, coefficients):
+    index = np.arange(len(power))
+    error = power - prediction
+    fig, axes = plt.subplots(3, 1, figsize=(14, 12), sharex=False)
+
+    axes[0].plot(index, power, color="black", linewidth=0.7, label="measured P")
+    axes[0].plot(index, prediction, color="tab:red", linewidth=0.7, label="fitted P")
+    if estimate is not None and np.isfinite(estimate).any():
+        axes[0].plot(index, estimate, color="tab:green", linewidth=0.6, alpha=0.8, label="firmware P_est")
+    axes[0].axvspan(train_count, len(power), color="orange", alpha=0.15, label="holdout")
+    axes[0].set_ylabel("power (W)")
+    axes[0].set_title(f"Chassis power fit, feature lag={lag:+d} samples")
+    axes[0].legend(loc="upper right")
+    axes[0].grid(alpha=0.25)
+
+    axes[1].plot(index, error, color="tab:blue", linewidth=0.6)
+    axes[1].axhline(0.0, color="black", linewidth=0.6)
+    axes[1].axvspan(train_count, len(power), color="orange", alpha=0.15)
+    axes[1].set_ylabel("P_measured - P_fit (W)")
+    axes[1].grid(alpha=0.25)
+
+    axes[2].scatter(speed.reshape(-1), current.reshape(-1), s=1.5, alpha=0.35)
+    axes[2].set_xlabel("rotor speed (rad/s)")
+    axes[2].set_ylabel("current (A)")
+    axes[2].set_title("Per-motor operating-point coverage")
+    axes[2].grid(alpha=0.25)
+
+    fig.tight_layout()
+    output_dir = os.path.dirname(os.path.abspath(path))
+    stem = os.path.splitext(os.path.basename(path))[0]
+    output = os.path.join(output_dir, f"{stem}_power_predict_fit.png")
+    fig.savefig(output, dpi=160)
+    plt.close(fig)
+    print(f"Plot: {output}")
+
+    report = pd.DataFrame({
+        "sample": index,
+        "power_measured_w": power,
+        "power_predicted_w": prediction,
+        "residual_w": error,
+    })
+    if estimate is not None:
+        report["firmware_estimate_w"] = estimate
+    report_path = os.path.join(output_dir, f"{stem}_power_predict_report.csv")
+    report.to_csv(report_path, index=False)
+    print(f"Per-sample report: {report_path}")
+
+
+def main(path):
+    df = load_data(path)
+    power, speed, current, estimate = extract_data(df)
+    power, speed, current, estimate = clean_data(power, speed, current, estimate)
+    if len(power) < 1000:
+        sys.exit(f"Need at least 1000 valid samples; only {len(power)} remain.")
+    diagnostics(power, speed, current)
+
+    lag = select_feature_lag(power, speed, current)
+    power, speed, current, estimate = align_feature_lag(power, speed, current, estimate, lag)
+    train_count = int(len(power) * (1.0 - VAL_FRACTION))
+    if train_count < 500 or len(power) - train_count < 100:
+        sys.exit("Not enough data after lag alignment for train/holdout split.")
+
+    p_train, w_train, i_train = power[:train_count], speed[:train_count], current[:train_count]
+    p_valid, w_valid, i_valid = power[train_count:], speed[train_count:], current[train_count:]
+    alpha = select_alpha(p_train, w_train, i_train)
+    coefficients = fit_huber_ridge(p_train, w_train, i_train, alpha)
+    prediction = predict(coefficients, speed, current)
+
+    print("\nFit quality")
+    print_metrics("train", p_train, prediction[:train_count])
+    print_metrics("holdout", p_valid, prediction[train_count:])
+    if estimate is not None and np.isfinite(estimate[train_count:]).any():
+        finite = np.isfinite(estimate[train_count:])
+        print_metrics("firmware holdout", p_valid[finite], estimate[train_count:][finite])
+        estimate_valid = estimate[train_count:][finite]
+        prediction_valid = prediction[train_count:][finite]
+        mismatch = np.sqrt(np.mean(np.square(estimate_valid - prediction_valid)))
+        print(f"Firmware/fitted prediction difference: {mismatch:.3f} W")
+        print("NOTE: a large difference is expected if VOFA logs getCurrent() while post_power uses motor_output.")
+
+    print("\nCoefficients for can_send_task.cpp")
+    for name, value in zip(("K0", "K1", "K2", "K3", "K4", "K5"), coefficients):
+        print(f"{name} = {value:.9f}f")
+    print("CorrectionConstant = 0.0f")
+    print("// P_total = sum_motor(K0 + K1*I + K2*abs(w) + K3*I*w + K4*I*I + K5*w*w)")
+
+    plot_results(path, power, speed, current, estimate, prediction, train_count, lag, coefficients)
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        CSV_PATH = sys.argv[1]
-    df = load_data(CSV_PATH)
-    P, W, I, tgt, P_est = extract(df)
-    diagnostics(P, W, I)
-    P, W, I, P_est, tgt = clean_data(P, W, I, P_est, tgt)
-    if len(P) < 1000:
-        sys.exit(f"错误: 有效数据只有 {len(P)} 点, 检查数据或放宽清洗阈值")
-    fit_and_report(P, W, I, P_est, tgt, CSV_PATH)
+    main(sys.argv[1] if len(sys.argv) > 1 else CSV_PATH)

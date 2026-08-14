@@ -113,16 +113,18 @@ void CanDevice::configure_filter()
 
 void CanDevice::register_rx_callback(RxCallback callback)
 {
-    if (callback)
+    if (callback != nullptr && rx_callback_count_ < MAX_RX_CALLBACKS)
     {
-        rx_callbacks_.push_back(callback);
+        rx_callbacks_[rx_callback_count_] = callback;
+        rx_callback_count_++;
     }
 }
 
 void CanDevice::trigger_rx_callbacks(const Frame &frame)
 {
-    for (auto &callback : rx_callbacks_)
+    for (uint8_t i = 0; i < rx_callback_count_; ++i)
     {
+        RxCallback callback = rx_callbacks_[i];
         if (callback)
         {
             callback(frame);

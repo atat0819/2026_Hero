@@ -41,8 +41,8 @@ ALG::PID::PID feeder_stop_pid(0.0f, 0.00f, 0.0f, 20000.0f, 1000.0f, 100.0f);
 
 
 ALG::PID::PID feeder_speed_pid_speed(1.0f, 0.00f, 0.0f, 5000.0f, 1000.0f, 100.0f);
-ALG::PID::PID left_friction_pid(20.0f, 0.0f, 0.0f, 16384.0f, 1000.0f, 100.0f);
-ALG::PID::PID right_friction_pid(20.0f, 0.0f, 0.0f, 16384.0f, 1000.0f, 100.0f);
+ALG::PID::PID left_friction_pid(20.0f, 0.08f, 0.0f, 16384.0f, 1000.0f, 100.0f);
+ALG::PID::PID right_friction_pid(20.0f, 0.08f, 0.0f, 16384.0f, 1000.0f, 100.0f);
 
 static constexpr float FRICTION_STOP_DEADBAND_RPM = 80.0f;
 static constexpr float FRICTION_BRAKE_KP = 6.0f;
@@ -276,18 +276,11 @@ friction_motor.setCAN((int16_t)right_out, 3);
 
 friction_motor.sendCAN();
 /**************************************************************************** */
-//vofa_send(feeder_fsm.Get_Control_Output(),feeder_fsm.Get_Accumulated_Angle(), feeder_speed, 360, 0, 0); // 发送数据到VOFA
-//vofa_send(feeder_fsm.Get_Accumulated_Angle(),          // ch1: 当前累积角度
-//          feeder_fsm.Get_Single_Shot_Target_Angle(),   // ch2: 单发目标角度
-//          feeder_fsm.Get_Accumulated_Angle() -
-//              feeder_fsm.Get_Single_Shot_Target_Angle(), // ch3: 角度误差（负=未到位，0=到位）
-//          feeder_speed,                                  // ch4: 当前转速
-//          (float)feeder_fsm.Get_Now_Status_Serial(),    // ch5: FSM状态 1=SINGLE_SHOT
-//          feeder_out,                                   // ch6: CAN输出电流
-//          feeder_fsm.Get_Control_Output(),             // ch7: 控制目标值(° 或 RPM)
-//          feeder_iq,                                   // ch8: 实际电流反馈
-//          friction_current_speed_left,                 // ch9: 左摩擦轮转速(RPM)
-//          friction_current_speed_right);               // ch10: 右摩擦轮转速(RPM)
+// VOFA 通道: ch1 拨弹轮目标角度(deg), ch2 拨弹轮累积角度(deg), ch3 拨弹轮当前速度(RPM), ch4 拨弹轮电流(A)
+//            ch5 左摩擦轮转速(RPM), ch6 右摩擦轮转速(RPM)
+vofa_send(feeder_fsm.Get_Control_Output(), feeder_fsm.Get_Accumulated_Angle(),
+          feeder_speed, feeder_iq,
+          friction_current_speed_left, friction_current_speed_right); // 发送数据到VOFA
 
 /****************************************************************************** */
 vTaskDelay(5); // 每5ms执行一次控制循环

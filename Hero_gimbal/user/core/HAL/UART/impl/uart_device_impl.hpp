@@ -11,7 +11,6 @@
 
 #pragma once
 #include "../interface/uart_device.hpp"
-#include <vector>
 namespace HAL::UART
 {
 
@@ -48,6 +47,8 @@ class UartDevice : public IUartDevice
     UART_HandleTypeDef *get_handle() const override;
 
   private:
+    static constexpr uint8_t MAX_RX_CALLBACKS = 4;
+
     UART_HandleTypeDef *handle_;
     // 接收状态标志
     bool is_receiving_;
@@ -58,7 +59,8 @@ class UartDevice : public IUartDevice
     bool is_idle_enabled_;
 
     // 存储注册的回调函数
-    std::vector<RemoteDataCallback> rx_callbacks_;
+    RemoteDataCallback rx_callbacks_[MAX_RX_CALLBACKS] = {};
+    uint8_t rx_callback_count_ = 0;
 };
 
 } // namespace HAL::UART

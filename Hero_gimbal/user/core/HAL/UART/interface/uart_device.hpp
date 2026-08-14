@@ -12,7 +12,6 @@
 #pragma once
 #include "main.h"  // 包含STM32 HAL的主头文件
 #include "usart.h" // 包含UART相关定义
-#include <functional>
 
 namespace HAL::UART
 {
@@ -24,7 +23,7 @@ struct Data
     uint16_t size;   // 数据大小
 };
 
-using RemoteDataCallback = std::function<void(const HAL::UART::Data& data)>;
+using RemoteDataCallback = void (*)(const HAL::UART::Data& data);
 
 // UART设备抽象接口
 class IUartDevice

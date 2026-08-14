@@ -40,6 +40,7 @@ typedef struct
 extern IMU_t imuData; // 存储解析后的 IMU 数据的结构体
 
 extern RemoteData_t RemoteData;
+extern volatile uint8_t gimbal_remote_offline;
 
 void can_send_task(void *argument);
 

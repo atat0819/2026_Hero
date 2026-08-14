@@ -198,7 +198,7 @@ extern "C" void remote_control_task(void *argument)
     uart8.receive_dma_idle(uart8_rx);
     __HAL_DMA_DISABLE_IT(&hdma_uart8_rx, DMA_IT_HT);
 
-    remoteController.SetDeadzone(0.1f);
+    remoteController.SetDeadzone(33.0f);
 
     static uint32_t vision_tick = 0;
 
