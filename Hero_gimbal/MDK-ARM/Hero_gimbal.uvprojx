@@ -874,6 +874,16 @@
               <FileType>8</FileType>
               <FilePath>..\user\core\Alg\UtilityFunction\SlopPlanning.cpp</FilePath>
             </File>
+            <File>
+              <FileName>fire_control.cpp</FileName>
+              <FileType>8</FileType>
+              <FilePath>..\user\core\Alg\fire_control\fire_control.cpp</FilePath>
+            </File>
+            <File>
+              <FileName>fire_control.hpp</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\user\core\Alg\fire_control\fire_control.hpp</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

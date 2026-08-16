@@ -41,8 +41,8 @@ ALG::PID::PID feeder_stop_pid(0.0f, 0.00f, 0.0f, 20000.0f, 1000.0f, 100.0f);
 
 
 ALG::PID::PID feeder_speed_pid_speed(1.0f, 0.00f, 0.0f, 5000.0f, 1000.0f, 100.0f);
-ALG::PID::PID left_friction_pid(20.0f, 0.08f, 0.0f, 16384.0f, 1000.0f, 100.0f);
-ALG::PID::PID right_friction_pid(20.0f, 0.08f, 0.0f, 16384.0f, 1000.0f, 100.0f);
+ALG::PID::PID left_friction_pid(37.0f, 0.13f, 0.0f, 16384.0f, 1000.0f, 100.0f);
+ALG::PID::PID right_friction_pid(37.0f, 0.13f, 0.0f, 16384.0f, 1000.0f, 100.0f);
 
 static constexpr float FRICTION_STOP_DEADBAND_RPM = 80.0f;
 static constexpr float FRICTION_BRAKE_KP = 6.0f;
@@ -278,9 +278,9 @@ friction_motor.sendCAN();
 /**************************************************************************** */
 // VOFA 通道: ch1 拨弹轮目标角度(deg), ch2 拨弹轮累积角度(deg), ch3 拨弹轮当前速度(RPM), ch4 拨弹轮电流(A)
 //            ch5 左摩擦轮转速(RPM), ch6 右摩擦轮转速(RPM)
-vofa_send(feeder_fsm.Get_Control_Output(), feeder_fsm.Get_Accumulated_Angle(),
-          feeder_speed, feeder_iq,
-          friction_current_speed_left, friction_current_speed_right); // 发送数据到VOFA
+// vofa_send(feeder_fsm.Get_Control_Output(), feeder_fsm.Get_Accumulated_Angle(),
+//           feeder_speed, feeder_iq,
+//           friction_current_speed_left, friction_current_speed_right); // 发送数据到VOFA
 
 /****************************************************************************** */
 vTaskDelay(5); // 每5ms执行一次控制循环

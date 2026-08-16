@@ -66,13 +66,13 @@ CAN_RxHeaderTypeDef rxHeader0, rxHeader1;
 /******************************************************************************** */
 // ============ 角度双环（普通角度模式：外环角度PID → 目标速度，内环速度PID → 扭矩） ============
 // yaw轴角度环外环PID
-ALG::PID::PID yaw_angle_pid(17.3f, 0.0f, 0.0f, 5000.0f, 1000.0f, 100.0f);
+ALG::PID::PID yaw_angle_pid(17.0f, 0.0f, 0.0f, 5000.0f, 1000.0f, 100.0f);
 // yaw轴角度环内环PID
-ALG::PID::PID yaw_angle_to_speed_pid(4.0f, 0.0f, 0.0f, 5000.0f, 1000.0f, 100.0f);
+ALG::PID::PID yaw_angle_to_speed_pid(3.0f, 0.0f, 0.0f, 5000.0f, 1000.0f, 100.0f);
 // pitch轴角度环外环PID
-ALG::PID::PID pitch_angle_pid(8.3f, 0.0f, 0.0f, 5000.0f, 1000.0f, 100.0f);
+ALG::PID::PID pitch_angle_pid(20.0f, 0.01f, 0.0f, 5000.0f, 1000.0f, 100.0f);
 // pitch轴角度环内环PID
-ALG::PID::PID pitch_angle_to_speed_pid(4.7f, 0.02f, 0.0f, 5000.0f, 1000.0f, 100.0f);
+ALG::PID::PID pitch_angle_to_speed_pid(4.0f, 0.0f, 0.0f, 5000.0f, 1000.0f, 100.0f);
 // 角度模式前馈：控制周期 1 ms，输出量纲为 LK4005 扭矩命令。
 Alg::Feedforward::Velocity yaw_angle_velocity_ff(
     0.0f, 0.001f);
@@ -84,10 +84,10 @@ Alg::Feedforward::GimbalFullCompensation yaw_angle_dynamics_ff(
 Alg::Feedforward::GimbalFullCompensation pitch_angle_dynamics_ff(
     0.00f, 0.001f, 0.0f, 0.0f);
 Alg::Feedforward::Friction pitch_angle_friction_ff(
-    0.0f, 15.0f);
+    30.0f, 15.0f);
 // pitch 重力补偿前馈（通用无状态：角度/视觉/速度模式共用）
 Alg::Feedforward::Gravity pitch_gravity_ff(
-    0.0f, 0.0f);
+    55.0f, 0.0f);
 /********************************************************************************** */
 
 // ============ 速度单环（遥控器/键鼠直驱速度控制） ============
@@ -243,7 +243,7 @@ pitch_gimbal_fsm_config.angle_step = 0.15f;
 pitch_gimbal_fsm_config.speed_scale = 95.0f;
 pitch_gimbal_fsm_config.mouse_speed_scale = 0.2f;   // 键鼠 pitch 手感 (°/s per pixel)
 pitch_gimbal_fsm_config.min_angle = -11.75f;   // IMU pitch 最低点
-pitch_gimbal_fsm_config.max_angle = 23.9f;    // IMU pitch 最高点
+pitch_gimbal_fsm_config.max_angle = 22.8f;    // IMU pitch 最高点
 pitch_gimbal_fsm_config.limit_angle = 1U;
 pitch_gimbal_fsm_config.normalize_angle = 0U;
 pitch_gimbal_fsm_config.continuous_angle = 0U;
@@ -716,9 +716,9 @@ else if (pitch_gimbal_fsm.Get_Control_Type() == GIMBAL_CONTROL_SPEED || imu_faul
         // vofa 发送: 1ms 循环里 28 字节帧 @115200 需 2.43ms, 每 10 拍(10ms)发一帧 → 100Hz
         
         
-            // vofa_send(yaw_target_angle, yaw_current_angle,        // ch1/ch2: yaw 目标/当前角度
-            //           yaw_target_speed, yaw_current_speed,      // ch3/ch4: yaw 目标/当前速度
-                    //   pitch_target_speed, pitch_current_speed); // ch5/ch6: pitch 目标/当前速度
+            vofa_send(yaw_target_angle, yaw_current_angle,        // ch1/ch2: yaw 目标/当前角度
+                      yaw_target_speed, yaw_current_speed,      // ch3/ch4: yaw 目标/当前速度
+                      imu.GetAngle(2), imu.GetGyro(2));          // ch5/ch6: IMU原始yaw / 原始gyro_z
         
 
          }

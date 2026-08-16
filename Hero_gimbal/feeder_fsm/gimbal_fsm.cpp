@@ -63,6 +63,11 @@ uint8_t Class_Gimbal_FSM::DetermineMode(const Struct_Gimbal_Input &input) const
     {
         return GIMBAL_MODE_SPEED;
     }
+    if (input.s1 == Remote::MIDDLE && input.s2 == Remote::DOWN)
+    {
+        return GIMBAL_MODE_SPEED;
+    }
+
     if (input.s1 == Remote::MIDDLE && input.s2 == Remote::MIDDLE)
     {
         if (input.vision_ready && input.vision_fresh)
