@@ -284,7 +284,6 @@ ImuData_user.yaw = GetContinuousYawAngle(imu.GetAngle(2), true);
 ImuData_user.pitch = imu.GetAngle(1);
 yaw_target_angle = ImuData_user.yaw;   // 目标=当前，偏差为0
 pitch_target_angle = ImuData_user.pitch; // pitch 用 IMU 闭环
-YawOffset_SetZero();
 
 // 最后才使能电机
 gimbal_motor.On(1, 1); // pitch → CAN2

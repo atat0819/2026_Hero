@@ -9,7 +9,6 @@ extern "C" {
 
 #define YAW_OFFSET_CAN2_STD_ID 0x301
 
-void YawOffset_SetZero(void);
 float YawOffset_GetDeg(void);
 HAL_StatusTypeDef YawOffset_SendToCan2(void);
 HAL_StatusTypeDef CAN2_SendChassisSpeed(float chassis_vx, float chassis_vy);

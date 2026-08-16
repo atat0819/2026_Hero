@@ -310,7 +310,6 @@ ImuData_user.yaw = GetContinuousYawAngle(imu.GetAngle(2), true);
 ImuData_user.pitch = imu.GetAngle(1);
 yaw_target_angle = ImuData_user.yaw;   // 目标=当前，偏差为0
 pitch_target_angle = ImuData_user.pitch; // pitch 用 IMU 闭环
-YawOffset_SetZero();
 
 // 最后才使能电机
 gimbal_motor.On(1, 1); // pitch → CAN2
@@ -718,7 +717,7 @@ else if (pitch_gimbal_fsm.Get_Control_Type() == GIMBAL_CONTROL_SPEED || imu_faul
         
             vofa_send(yaw_target_angle, yaw_current_angle,        // ch1/ch2: yaw 目标/当前角度
                       yaw_target_speed, yaw_current_speed,      // ch3/ch4: yaw 目标/当前速度
-                      imu.GetAngle(2), imu.GetGyro(2));          // ch5/ch6: IMU原始yaw / 原始gyro_z
+                      imu.GetAngle(2), YawOffset_GetDeg());          // ch5/ch6: IMU原始yaw / 原始gyro_z
         
 
          }

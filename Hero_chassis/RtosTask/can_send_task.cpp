@@ -22,6 +22,7 @@
 #include "../communication/super_cupacitor.hpp"
 #include "../communication/gimbal_refree.hpp"
 #include "../user/core/APP/Referee/RM_RefereeSystem.h"
+#include "../user/core/Alg/UtilityFunction/SlopePlanning.hpp"
 
 #define Gain 4.0
 
@@ -62,6 +63,11 @@ Communication::GimbalRefree gimbal_refree;
 	Alg::CalculationBase::Omni_IK ik(0.2943f, 0.076f, wheel_azimuth, wheel_coords); // 逆运动学
 	Alg::CalculationBase::Omni_FK fk(0.2943f, 0.076f, 4.0f, wheel_azimuth, azimuth_for_fk); // 正运动学
 	Alg::CalculationBase::Omni_ID id(0.2943f, 0.076f, 4.0f, wheel_azimuth, wheel_coords); // 逆动力学
+
+// vx/vy 斜坡规划 (防功率尖峰/麦轮打滑), 反馈同步用 FK 实测底盘速度; w 方向不规划, 保持转向响应
+// 斜率单位: 每控制周期增量, 1kHz 循环下 0.008 ≈ 8 m/s² 加速度
+Alg::Utility::SlopePlanning ramp_vx(0.007f, 0.006f);
+Alg::Utility::SlopePlanning ramp_vy(0.007f, 0.006f);
 
 
 // 模板参数 <N> 表示电机数量
@@ -126,7 +132,7 @@ ALG::PID::PID motor_pid[4] = {
 ALG::PID::PID test_pid = {0.0f, 0.0f, 0.0f, 10000.0f, 5000.0f, 500.0f};
 
 // 底盘状态机实例
-Chassis_FSM chassis_fsm(5.0f, 0.0f, 0.0f, 100.0f, 25.0f, 2.5f); // PID 参数可以根据需要调整
+Chassis_FSM chassis_fsm(8.0f, 0.0f, 0.0f, 100.0f, 25.0f, 2.5f); // PID 参数可以根据需要调整
 
 float output = 0.0f; // PID 输出变量
 float target = 10.0f; // 目标速度（示例值）
@@ -449,13 +455,22 @@ osDelay(1);
    continue;
 }
 /**************************************************************** */
-        ik.OmniInvKinematics(vx_body, vy_body, wz_cmd, 0.0f, 1.0f, 1.0f);
-        //ik.OmniInvKinematics(ChassisData.vx, ChassisData.vy, -ChassisData.wz, 0.0f, 1.0f, 1.0f);
-            
-          current_speed_rads[0] = chassis_motor.getVelocityRads(1) / 19.0f; // 转换为电机轴转速
+          // --- 斜坡规划: 先采集轮速并更新 FK 作为反馈 ---
+          current_speed_rads[0] = chassis_motor.getVelocityRads(1) / 19.0f; // 轮轴转速 (rad/s)
           current_speed_rads[1] = chassis_motor.getVelocityRads(2) / 19.0f;
           current_speed_rads[2] = chassis_motor.getVelocityRads(3) / 19.0f;
           current_speed_rads[3] = chassis_motor.getVelocityRads(4) / 19.0f;
+
+          fk.OmniForKinematics(current_speed_rads[0], current_speed_rads[1], current_speed_rads[2], current_speed_rads[3]); // FK: 轮速 -> 底盘实测速度
+
+          // vx/vy 斜坡规划 (反馈同步: 实测速度已在目标与规划之间时, 规划器直接同步到实测, 避免滞后)
+          ramp_vx.TIM_Calculate_PeriodElapsedCallback(vx_body, fk.GetChassisVx());
+          ramp_vy.TIM_Calculate_PeriodElapsedCallback(vy_body, fk.GetChassisVy());
+          vx_body = ramp_vx.GetOut();
+          vy_body = ramp_vy.GetOut();
+
+          ik.OmniInvKinematics(vx_body, vy_body, wz_cmd, 0.0f, 1.0f, 1.0f);
+          //ik.OmniInvKinematics(ChassisData.vx, ChassisData.vy, -ChassisData.wz, 0.0f, 1.0f, 1.0f);
 
           motor_target_speed[0] = ik.GetMotor(0);
             motor_target_speed[1] = ik.GetMotor(1);
@@ -475,7 +490,7 @@ osDelay(1);
 	    power_strategy.Update(
 	        supercap.isOnline(),                              // 超电在线状态
 	        !RM_RefereeSystemDirFlag,                         // 裁判系统在线
-	        80,//(float)ext_power_heat_data_0x0202.chassis_power_limit,  // 裁判功率上限 (W)
+	        90,//(float)ext_power_heat_data_0x0202.chassis_power_limit,  // 裁判功率上限 (W)
 	        (float)ext_power_heat_data_0x0202.chassis_power_buffer, // 缓冲能量 (J)
 	        supercap.getEnergy()                              // 超电剩余能量 (J)
 	    );

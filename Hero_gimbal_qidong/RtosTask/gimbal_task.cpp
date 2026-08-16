@@ -7,7 +7,7 @@
 #include "../user/core/BSP/Motor/Dm/DmMotor.hpp"
 
 
-BSP::Motor::DM::J4310<1> dm666(0x00,{6},{0x06}); // 单个 DM4310，CAN ID 0x06（反馈帧 ID=0x00+0x06，控制帧 ID=0x06）
+BSP::Motor::DM::J4310<1> dm666(0x00,{0x02},{0x01}); // 单个 DM4310，电机 ID 0x01，master ID 0x02（反馈帧 ID=0x00+0x02，控制帧 ID=0x01）
  DM4310_State_t dm4310_state[1]; // 存储 DM4310 电机的状态数据
 
 

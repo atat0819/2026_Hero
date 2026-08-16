@@ -120,6 +120,7 @@
         <SetRegEntry>
           <Number>0</Number>
           <Key>DLGUARM</Key>
+          <Name></Name>
         </SetRegEntry>
         <SetRegEntry>
           <Number>0</Number>
@@ -343,6 +344,16 @@
           <count>36</count>
           <WinNumber>1</WinNumber>
           <ItemText>right_friction_pid</ItemText>
+        </Ww>
+        <Ww>
+          <count>37</count>
+          <WinNumber>1</WinNumber>
+          <ItemText>yaw_offset_deg</ItemText>
+        </Ww>
+        <Ww>
+          <count>38</count>
+          <WinNumber>1</WinNumber>
+          <ItemText>mg4005_state</ItemText>
         </Ww>
       </WatchWindow1>
       <WatchWindow2>
