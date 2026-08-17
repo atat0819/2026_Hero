@@ -155,6 +155,12 @@ extern "C" void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
     }
 }
 
+//虚拟串口假回调 (见USB_DEVICE\App\usbd_cdc_if.c)
+extern "C" void USB_Receive_Callback(uint8_t *Buf, uint32_t Len)
+{
+}
+
+
 // ================= FreeRTOS 任务 =================
 
 /**

@@ -130,8 +130,8 @@ public:
 private:
     void Update_Accumulated_Angle(float feeder_current_angle);  // 接收电机层多圈角度
     float Calculate_Single_Shot_Target() const;                 // 当前角度 + 单发角度 + 小范围相位修正
-    bool Is_Single_Shot_Finished()    const;                     // 单发到位判定
-    bool Is_Manual_Reverse_Finished() const;                     // 反转到位判定
+    bool Is_Single_Shot_Finished(float current_speed);           // 单发到位判定(误差+转速 / 卡滞早退)
+    bool Is_Manual_Reverse_Finished(float current_speed) const;  // 反转到位判定(误差+转速)
 
 private:
     // ---- 输出变量 ----
@@ -157,21 +157,29 @@ private:
     // ---- 状态标志 ----
     uint8_t angle_initialized          = 0; // 角度初始化完成标志
     uint8_t single_shot_target_locked  = 0; // 单发目标角度已锁定 (防止进入时重复计算)
+    uint8_t single_shot_stall_ticks    = 0; // 卡滞早退: 转子低速连续周期计数
     uint8_t manual_reverse_target_locked = 0; // 反转目标角度已锁定
 
     // ======================================================================
     // 可调参数 (改动这些值来调整射击行为)
     // ======================================================================
 
-    // 单发弹丸对应的电机轴转动角度 (°) — 输出轴坐标
-    // 计算: 拨弹轮 1/8 圈 = 45°, 外减速比 2.75, DM4310 无内减速
-    // 45° × 2.75 = 123.75°（需根据实际弹道标定微调）
-    static constexpr float SINGLE_SHOT_ANGLE = -(45.0f * 2.75f);
+    // 单发 / 反转统一行程 (°) — 输出轴坐标
+    static constexpr float FEEDER_STEP_ANGLE_DEG = 61.0f;
+    static constexpr float SINGLE_SHOT_ANGLE = -FEEDER_STEP_ANGLE_DEG;
+    static constexpr float MANUAL_REVERSE_ANGLE = FEEDER_STEP_ANGLE_DEG;
     //static constexpr float SINGLE_SHOT_ANGLE = -(60.0 * 51.0f); // DJI3508 转子坐标旧值 -3060
 
     // 单发到位判定阈值 (°) — 当前角度与目标角度的误差小于此值即认为完成
     // DM4310 输出轴坐标下精度更高，适当收紧
     static constexpr float SINGLE_SHOT_FINISH_THRESHOLD = 3.0f;
+
+    // 单发 / 反转到位转速阈值 (RPM): 角度进窗且基本停稳才认为到位
+    static constexpr float SINGLE_SHOT_FINISH_SPEED_RPM = 3.0f;
+
+    // 卡滞早退: 转子基本停下但误差没进窗时, 连续一小段时间后进入冷却
+    static constexpr float SINGLE_SHOT_STALL_SPEED_RPM = 0.5f;
+    static constexpr uint8_t SINGLE_SHOT_STALL_TICKS = 10;
 
     // ROLLBACK_MARKER_SINGLE_SHOT_PHASE_CORRECTION_BEGIN
     // 上一发最终误差绝对值不超过该输出轴角时, 下一发反向小修正; 超过则认为异常, 不补偿。

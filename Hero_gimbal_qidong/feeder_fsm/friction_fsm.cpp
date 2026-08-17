@@ -1,0 +1,135 @@
+#include "friction_fsm.hpp"
+#include "../user/core/BSP/RemoteControl/DT7.hpp"
+
+using Remote = BSP::REMOTE_CONTROL::RemoteController;
+
+void Class_Friction_FSM::Init()
+{
+    Class_FSM::Init(FRICTION_STATUS_COUNT, FRICTION_STOP);
+    left_control_output = 0.0f;
+    right_control_output = 0.0f;
+    top_control_output = 0.0f;
+    current_mode = FRICTION_MODE_STOP;
+}
+
+bool Class_Friction_FSM::Is_Speed_Ready(float left_speed,
+                                        float right_speed,
+                                        float top_speed) const
+{
+    return left_speed <= READY_SPEED_THRESHOLD &&
+           right_speed >= -READY_SPEED_THRESHOLD &&
+           top_speed <= READY_SPEED_THRESHOLD;
+}
+
+// ===== FSM 内部判断 friction_mode =====
+static uint8_t DetermineFrictionMode(const struct Struct_Friction_Input &input)
+{
+    if (input.is_keymouse)
+    {
+        return input.friction_on ? FRICTION_MODE_ON : FRICTION_MODE_STOP;
+    }
+
+    // 非法拨杆值（上电未连接时为 0）→ 默认 STOP，防止摩擦轮误启动
+    if (input.s1 < 1 || input.s1 > 3 || input.s2 < 1 || input.s2 > 3)
+    {
+        return FRICTION_MODE_STOP;
+    }
+
+    // 遥控器模式：S2=DOWN 时停止，其余允许摩擦轮启动
+    if (input.s1 == Remote::DOWN && input.s2 == Remote::DOWN)   return FRICTION_MODE_STOP;
+    if (input.s1 == Remote::MIDDLE && input.s2 == Remote::DOWN) return FRICTION_MODE_STOP;
+    if (input.s1 == Remote::UP && input.s2 == Remote::DOWN)     return FRICTION_MODE_STOP;
+
+    return FRICTION_MODE_ON;
+}
+
+void Class_Friction_FSM::Update(const Struct_Friction_Input &input,
+                                float left_speed,
+                                float right_speed,
+                                float top_speed)
+{
+    current_mode = DetermineFrictionMode(input);
+
+    // 强制停止优先
+    if (current_mode == FRICTION_MODE_STOP)
+    {
+        left_control_output = 0.0f;
+        right_control_output = 0.0f;
+        top_control_output = 0.0f;
+        Set_Status(FRICTION_STOP);
+    }
+    else
+    {
+        switch (Get_Now_Status_Serial())
+        {
+        case FRICTION_STOP:
+            left_control_output = 0.0f;
+            right_control_output = 0.0f;
+            top_control_output = 0.0f;
+
+            if (current_mode == FRICTION_MODE_ON)
+            {
+                Set_Status(FRICTION_STARTING);
+            }
+            break;
+
+        case FRICTION_STARTING:
+            left_control_output = TARGET_SPEED;
+            right_control_output = -TARGET_SPEED;
+            top_control_output = TARGET_SPEED;
+
+            if (current_mode == FRICTION_MODE_STOP)
+            {
+                Set_Status(FRICTION_STOP);
+            }
+            else if (Is_Speed_Ready(left_speed, right_speed, top_speed) &&
+                     Status[FRICTION_STARTING].Count_Time >= STARTING_TIME_COUNT)
+            {
+                Set_Status(FRICTION_READY);
+            }
+            break;
+
+        case FRICTION_READY:
+            left_control_output = TARGET_SPEED;
+            right_control_output = -TARGET_SPEED;
+            top_control_output = TARGET_SPEED;
+
+            if (current_mode == FRICTION_MODE_STOP)
+            {
+                Set_Status(FRICTION_STOP);
+            }
+            else if (!Is_Speed_Ready(left_speed, right_speed, top_speed))
+            {
+                Set_Status(FRICTION_STARTING);
+            }
+            break;
+
+        default:
+            left_control_output = 0.0f;
+            right_control_output = 0.0f;
+            top_control_output = 0.0f;
+            Set_Status(FRICTION_STOP);
+            break;
+        }
+    }
+}
+
+float Class_Friction_FSM::Get_Left_Control_Output()
+{
+    return left_control_output;
+}
+
+float Class_Friction_FSM::Get_Right_Control_Output()
+{
+    return right_control_output;
+}
+
+float Class_Friction_FSM::Get_Top_Control_Output()
+{
+    return top_control_output;
+}
+
+uint8_t Class_Friction_FSM::Is_Ready()
+{
+    return Get_Now_Status_Serial() == FRICTION_READY;
+}

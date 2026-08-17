@@ -6,11 +6,15 @@
 #include "cmsis_os.h"
 #include "gimbal_task.hpp"
 #include "usart.h"
+#include "usbd_cdc_if.h"
 #include "../user/core/HAL/UART/uart_hal.hpp"   // [新增] 使用 UART 库发送，对标 CAN 的 can_hal.hpp
 #include "../feeder_fsm/gimbal_fsm.hpp"
 #include "../communication_between_boards/refree_receive.hpp"
 #include "../communication_between_boards/input_dispatcher.hpp"
 #include "../user/core/Alg/Feedforward/Feedforward.hpp"
+#include <string.h>
+
+extern "C" USBD_HandleTypeDef hUsbDeviceFS;
 
 namespace
 {
@@ -715,9 +719,14 @@ else if (pitch_gimbal_fsm.Get_Control_Type() == GIMBAL_CONTROL_SPEED || imu_faul
         // vofa 发送: 1ms 循环里 28 字节帧 @115200 需 2.43ms, 每 10 拍(10ms)发一帧 → 100Hz
         
         
-            vofa_send(yaw_target_angle, yaw_current_angle,        // ch1/ch2: yaw 目标/当前角度
-                      yaw_target_speed, yaw_current_speed,      // ch3/ch4: yaw 目标/当前速度
-                      imu.GetAngle(2), YawOffset_GetDeg());          // ch5/ch6: IMU原始yaw / 原始gyro_z
+            // VOFA is sent from gimbal_task by vofa_sendN for feeder/friction debugging.
+            // Keep a single producer so channel meanings stay stable.
+            // float gimbal_vofa_data[] = {
+            //     yaw_target_angle, yaw_current_angle,
+            //     yaw_target_speed, yaw_current_speed,
+            //     imu.GetAngle(2), YawOffset_GetDeg(),
+            // };
+            // vofa_sendN(gimbal_vofa_data, 6);
         
 
          }
@@ -764,27 +773,54 @@ void SafetyCheck()
 
 }
 
-uint8_t send_str2[sizeof(float) * 7]; // 6个float数据 + 4字节帧尾（28字节）
-
 //开vofa软件的justfloat模式
-void vofa_send(float x1, float x2, float x3, float x4, float x5, float x6)
+uint8_t send_str2[sizeof(float) * 11]; // 分配11个float空间（44字节，10数据+1帧尾）
+void vofa_sendN(const float *data, uint8_t count)
 {
-    const uint8_t sendSize = sizeof(float); // 单浮点数占4字节
+    if (data == nullptr || count == 0)
+    {
+        return;
+    }
 
-    // 将6个浮点数据写入缓冲区（小端模式）
-    *((float*)&send_str2[sendSize * 0]) = x1;
-    *((float*)&send_str2[sendSize * 1]) = x2;
-    *((float*)&send_str2[sendSize * 2]) = x3;
-    *((float*)&send_str2[sendSize * 3]) = x4;
-    *((float*)&send_str2[sendSize * 4]) = x5;
-    *((float*)&send_str2[sendSize * 5]) = x6;
+    if (count > 10)
+    {
+        count = 10;
+    }
 
-    // 写入帧尾（协议要求 0x00 0x00 0x80 0x7F）
-    *((uint32_t*)&send_str2[sizeof(float) * 6]) = 0x7F800000; // 小端存储为 00 00 80 7F
+    USBD_CDC_HandleTypeDef *hcdc = static_cast<USBD_CDC_HandleTypeDef*>(hUsbDeviceFS.pClassData);
+    if (hcdc == nullptr || hcdc->TxState != 0)
+    {
+        return;
+    }
 
-    HAL::UART::Data vofa_tx_data{send_str2, sizeof(float) * 7};
-    HAL::UART::get_uart_bus_instance().get_uart6().transmit_dma(vofa_tx_data);
+    memcpy(send_str2, data, sizeof(float) * count);
+    *((uint32_t*)&send_str2[sizeof(float) * count]) = 0x7F800000;
+
+    CDC_Transmit_FS(send_str2, static_cast<uint16_t>(sizeof(float) * (count + 1)));
 }
+
+
+// uint8_t send_str2[sizeof(float) * 7]; // 6个float数据 + 4字节帧尾（28字节）
+
+// //开vofa软件的justfloat模式
+// void vofa_send(float x1, float x2, float x3, float x4, float x5, float x6)
+// {
+//     const uint8_t sendSize = sizeof(float); // 单浮点数占4字节
+
+//     // 将6个浮点数据写入缓冲区（小端模式）
+//     *((float*)&send_str2[sendSize * 0]) = x1;
+//     *((float*)&send_str2[sendSize * 1]) = x2;
+//     *((float*)&send_str2[sendSize * 2]) = x3;
+//     *((float*)&send_str2[sendSize * 3]) = x4;
+//     *((float*)&send_str2[sendSize * 4]) = x5;
+//     *((float*)&send_str2[sendSize * 5]) = x6;
+
+//     // 写入帧尾（协议要求 0x00 0x00 0x80 0x7F）
+//     *((uint32_t*)&send_str2[sizeof(float) * 6]) = 0x7F800000; // 小端存储为 00 00 80 7F
+
+//     HAL::UART::Data vofa_tx_data{send_str2, sizeof(float) * 7};
+//     HAL::UART::get_uart_bus_instance().get_uart6().transmit_dma(vofa_tx_data);
+// }
 
  void ControlTask() {
     for (int i = 0; i < 2; i++) {

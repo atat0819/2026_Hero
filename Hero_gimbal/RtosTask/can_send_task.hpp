@@ -50,7 +50,7 @@ extern float yaw_target_speed ;   // 来自pid计算的目标速度
 extern float pitch_target_speed ; // 来自pid计算的目标速度
 
 
-void vofa_send(float x1, float x2, float x3, float x4, float x5, float x6);
+void vofa_sendN(const float *data, uint8_t count);
 
 
 #ifdef __cplusplus

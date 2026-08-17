@@ -2,6 +2,7 @@
 #define FEEDFORWARD_HPP 
 
 #include <math.h>
+#include "../Filter/Filter.hpp"
 #define MY_PI 3.141592653589
 #define g 9.80665
 
@@ -412,8 +413,11 @@ namespace Alg::Feedforward
              */
             GimbalFullCompensation(float kJ = 0.0f, float dt = 0.001f, float viscousfriction = 0.0f, float coulombfriction = 0.0f)
                 : k_J(kJ), control_dt(dt), torque(0.0f), friction(0.0f),
-                  acc_feedforward(0.0f), last_ref_velocity(0.0f), filtered_acc(0.0f), 
-                  ViscousFriction(viscousfriction), CoulombFriction(coulombfriction){}
+                  acc_feedforward(0.0f), last_ref_velocity(0.0f), filtered_acc(0.0f),
+                  ViscousFriction(viscousfriction), CoulombFriction(coulombfriction)
+            {
+                acc_lpf.Configure(50.0f, control_dt, 0.70710678f);
+            }
 
             /**
              * @brief 摩擦力 + 惯量前馈
@@ -439,9 +443,7 @@ namespace Alg::Feedforward
                 // 角加速度前馈: k_J * θ̈_r (对期望速度差分 + 低通滤波)
                 float ref_acc_raw = (ref_velocity - last_ref_velocity) / control_dt;
                 last_ref_velocity = ref_velocity;
-                // 一阶低通滤波（0.1~0.3之间调整）
-                float alpha = 0.15f;
-                filtered_acc = filtered_acc * (1.0f - alpha) + ref_acc_raw * alpha;
+                filtered_acc = acc_lpf.Filter(ref_acc_raw);
                 acc_feedforward = k_J * filtered_acc;
 
                 // 总前馈 = 摩擦力 + 惯量前馈
@@ -492,6 +494,7 @@ namespace Alg::Feedforward
                 acc_feedforward = 0.0f;
                 friction = 0.0f;
                 torque = 0.0f;
+                acc_lpf.Reset(0.0f);
             }
 
         private:
@@ -501,7 +504,8 @@ namespace Alg::Feedforward
             float friction;           // 摩擦力前馈输出
             float acc_feedforward;    // 角加速度前馈量
             float last_ref_velocity;  // 上一次期望速度
-            float filtered_acc;       // 低通滤波后的角加速度
+            float filtered_acc;       // 二阶低通滤波后的角加速度
+            SecondOrderLPFFilter acc_lpf;
             float ViscousFriction;    // 粘性摩擦力系数
             float CoulombFriction;    // 库伦摩擦力系数
     };

@@ -31,6 +31,7 @@
 #include "chassis_task.hpp"
 #include "can_send_task.hpp"
 #include "usart.h"
+#include "usb_device.h"
 
 /* USER CODE END Includes */
 
@@ -72,12 +73,14 @@ TaskHandle_t xCanSendHandle;
 TaskHandle_t xGimbalHandle;
 
 
+extern void MX_USB_DEVICE_Init(void);
 
 
 /* USER CODE END FunctionPrototypes */
 
 void start(void *argument);
 
+//extern void MX_USB_DEVICE_Init(void);
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
 /**
@@ -112,7 +115,8 @@ void MX_FREERTOS_Init(void) {
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
-	
+	  //MX_USB_DEVICE_Init();
+
 	start_can_send = xTaskCreate(can_send_task, "CAN_Send_Task", 1024, NULL, osPriorityAboveNormal, &xCanSendHandle);
   start_chassis = xTaskCreate(chassis_task, "Chassis_Task", 256, NULL, osPriorityAboveNormal, &xGimbalHandle);
   start_remote_control = xTaskCreate(remote_task, "Remote_Control_Task", 256, NULL, osPriorityAboveNormal, &xRemoteHandle);
@@ -135,6 +139,8 @@ void MX_FREERTOS_Init(void) {
 /* USER CODE END Header_start */
 void start(void *argument)
 {
+  /* init code for USB_DEVICE */
+  MX_USB_DEVICE_Init();
   /* USER CODE BEGIN start */
   /* Infinite loop */
   for(;;)

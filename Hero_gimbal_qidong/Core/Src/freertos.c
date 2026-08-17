@@ -121,7 +121,8 @@ void MX_FREERTOS_Init(void) {
  start_can_send =  xTaskCreate(can_send_task, "CAN_Send_Task", 2048, NULL, osPriorityAboveNormal+2, &xCanSendHandle);
   start_gimbal = xTaskCreate(gimbal_task, "Gimbal_Task", 1024, NULL, osPriorityAboveNormal+1, &xGimbalHandle);
   start_remote_control = xTaskCreate(remote_control_task, "Remote_Control_Task", 256, NULL, osPriorityAboveNormal, &xRemoteHandle);
-  start_lob_shot = xTaskCreate(lob_shot_task, "Lob_Shot_Task", 512, NULL, osPriorityAboveNormal+1, &xLobShotHandle);
+  // 3-friction-wheel lob shot is controlled in gimbal_task; pneumatic lob_shot_task is disabled.
+  // start_lob_shot = xTaskCreate(lob_shot_task, "Lob_Shot_Task", 512, NULL, osPriorityAboveNormal+1, &xLobShotHandle);
 
   /* add threads, ... */
   /* USER CODE END RTOS_THREADS */

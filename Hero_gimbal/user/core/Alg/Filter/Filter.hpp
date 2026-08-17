@@ -1,109 +1,138 @@
 #ifndef FILTER_HPP
 #define FILTER_HPP
 
-
-/*  =========================== 卡尔曼滤波器类 ===========================  */
+/*  =========================== Kalman Filter ===========================  */
 class KalmanFilter
 {
 private:
-    float X_last;   // 上一时刻的最优状态估计值
-    float X_mid;    // 当前时刻的预测状态估计值
-    float X_now;    // 当前时刻的最优状态估计值
-    float P_mid;    // 预测状态的协方差
-    float P_now;    // 最优状态的协方差
-    float P_last;   // 上一时刻的协方差
-    float kg;       // 卡尔曼增益，用于平衡预测值和观测值的权重
-    float A;        // 状态转移系数（状态转移矩阵的元素）
-    float Q;        // 预测过程噪声协方差
-    float R;        // 观测噪声协方差
-    float H;        // 观测矩阵系数
+    float X_last;
+    float X_mid;
+    float X_now;
+    float P_mid;
+    float P_now;
+    float P_last;
+    float kg;
+    float A;
+    float Q;
+    float R;
+    float H;
 
 public:
-    // 构造函数
     KalmanFilter(float T_Q = 0.0001f, float T_R = 0.0001f);
-    
-    // 滤波处理函数
+
     float filter(float dat);
-    
-    // 重新初始化参数
     void reinit(float T_Q, float T_R);
 
-    float getState() const;        // 获取当前状态估计值
-    float getPrediction() const;   // 获取当前预测值
-    float getGain() const;         // 获取当前卡尔曼增益
+    float getState() const;
+    float getPrediction() const;
+    float getGain() const;
 };
 
-
-
-/*  =========================== TD跟踪微分器类 ===========================  */
+/*  =========================== Tracking Differentiator Filter ===========================  */
 class TDFilter
 {
 private:
-    float v1, v2;   // 状态变量：v1为跟踪信号，v2为微分信号
-    float R;        // 速度因子，决定跟踪速度的快慢
-    float H;        // 积分步长
+    float v1;
+    float v2;
+    float R;
+    float H;
 
 public:
-    // 构造函数
     TDFilter(float init_R = 100.0f, float init_H = 0.01f);
-    
-    // 滤波处理函数
+
     float filter(float Input);
-    
-    // 重新设置参数
     void setParams(float new_R, float new_H);
 
-    float getDerivative() const;      // 获取微分信号
+    float getDerivative() const;
 };
 
-
-
-
-/*  =========================== 一阶低通滤波器类 ===========================  */
+/*  =========================== First-order Low-pass Filter ===========================  */
 class LPFFilter
 {
 private:
-    float Last_Out;  // 上次滤波输出值
-    float Ratio;     // 滤波系数(0-1)：值越大响应越快，滤波效果越弱
+    float Last_Out;
+    float Ratio;
 
 public:
-    // 构造函数
     LPFFilter(float ratio = 0.5f);
-    
-    // 滤波处理函数
+
     float filter(float Input);
-    
-    // 设置滤波系数
     void setRatio(float ratio);
-    
-    
-    float getOutput() const;    // 获取当前输出值
-    float getRatio() const;    // 获取当前滤波系数
+
+    float getOutput() const;
+    float getRatio() const;
 };
 
-
-
-
-/*  =========================== 限幅滤波器类 ===========================  */
+/*  =========================== Limit Filter ===========================  */
 class LMFFilter
 {
 private:
-    float Last_Out;      // 上次滤波输出值
-    float Limit_Ratio;   // 最大允许变化量（限制幅度）
+    float Last_Out;
+    float Limit_Ratio;
 
 public:
-    // 构造函数
     LMFFilter(float limit_ratio = 1.0f);
-    
-    // 滤波处理函数
+
     float filter(float Input);
-    
-    // 设置限制幅度
     void setLimit(float limit_ratio);
-    
-    
-    float getOutput() const;        // 获取当前输出值
-    float getLimitRatio() const;    // 获取当前限制幅度
+
+    float getOutput() const;
+    float getLimitRatio() const;
+};
+
+/*  =========================== Second-order Low-pass Filter ===========================  */
+class SecondOrderLPFFilter
+{
+private:
+    float b0;
+    float b1;
+    float b2;
+    float a1;
+    float a2;
+    float input_1;
+    float input_2;
+    float output_1;
+    float output_2;
+    float output;
+    float cutoff_frequency;
+    float sample_period;
+    float damping;
+
+public:
+    SecondOrderLPFFilter(float cutoff_frequency_hz = 0.0f,
+                         float sample_period_s = 0.001f,
+                         float damping_ratio = 0.70710678f);
+
+    void configure(float cutoff_frequency_hz, float sample_period_s,
+                   float damping_ratio = 0.70710678f);
+    float filter(float input);
+    void reset(float initial_value = 0.0f);
+
+    float getOutput() const;
+    float getCutoffFrequency() const;
+    float getSamplePeriod() const;
+    float getDampingRatio() const;
+
+    void Configure(float cutoff_frequency_hz, float sample_period_s,
+                   float damping_ratio = 0.70710678f)
+    {
+        configure(cutoff_frequency_hz, sample_period_s, damping_ratio);
+    }
+
+    float Filter(float input)
+    {
+        return filter(input);
+    }
+
+    void Reset(float initial_value = 0.0f)
+    {
+        reset(initial_value);
+    }
+
+    float GetOutput() const { return getOutput(); }
+    float GetCutoffFrequency() const { return getCutoffFrequency(); }
+    float GetSamplePeriod() const { return getSamplePeriod(); }
+    float GetDampingRatio() const { return getDampingRatio(); }
 };
 
 #endif

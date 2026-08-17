@@ -39,6 +39,7 @@ void Class_Feeder_FSM::Init()
     angle_initialized            = 0;
     single_shot_target_locked    = 0;
     manual_reverse_target_locked = 0;
+    single_shot_stall_ticks      = 0;
 }
 
 // ============================================================================
@@ -51,24 +52,46 @@ void Class_Feeder_FSM::Update_Accumulated_Angle(float feeder_current_angle)
     angle_initialized = 1;
 }
 
-// ROLLBACK_MARKER_SINGLE_SHOT_PHASE_CORRECTION_BEGIN
 float Class_Feeder_FSM::Calculate_Single_Shot_Target() const
 {
     return accumulated_angle + SINGLE_SHOT_ANGLE - single_shot_phase_correction;
 }
-// ROLLBACK_MARKER_SINGLE_SHOT_PHASE_CORRECTION_END
 
 // ============================================================================
 // 到位判定
 // ============================================================================
-bool Class_Feeder_FSM::Is_Single_Shot_Finished() const
+bool Class_Feeder_FSM::Is_Single_Shot_Finished(float current_speed)
 {
-    return fabs(single_shot_target_angle - accumulated_angle) <= SINGLE_SHOT_FINISH_THRESHOLD;
+    const float single_shot_error = fabs(single_shot_target_angle - accumulated_angle);
+
+    if (single_shot_error <= SINGLE_SHOT_FINISH_THRESHOLD &&
+        fabs(current_speed) <= SINGLE_SHOT_FINISH_SPEED_RPM)
+    {
+        single_shot_stall_ticks = 0;
+        return true;
+    }
+
+    if (single_shot_error > SINGLE_SHOT_FINISH_THRESHOLD &&
+        fabs(current_speed) <= SINGLE_SHOT_STALL_SPEED_RPM)
+    {
+        if (++single_shot_stall_ticks >= SINGLE_SHOT_STALL_TICKS)
+        {
+            single_shot_stall_ticks = 0;
+            return true;
+        }
+    }
+    else
+    {
+        single_shot_stall_ticks = 0;
+    }
+
+    return false;
 }
 
-bool Class_Feeder_FSM::Is_Manual_Reverse_Finished() const
+bool Class_Feeder_FSM::Is_Manual_Reverse_Finished(float current_speed) const
 {
-    return fabs(manual_reverse_target_angle - accumulated_angle) <= SINGLE_SHOT_FINISH_THRESHOLD;
+    return fabs(manual_reverse_target_angle - accumulated_angle) <= SINGLE_SHOT_FINISH_THRESHOLD &&
+           fabs(current_speed) <= SINGLE_SHOT_FINISH_SPEED_RPM;
 }
 
 // ============================================================================
@@ -255,7 +278,7 @@ void Class_Feeder_FSM::Update(const Struct_Feeder_Input &input,
         {
             manual_reverse_pending = 0;
             single_shot_phase_correction = 0.0f;
-            manual_reverse_target_angle = accumulated_angle - SINGLE_SHOT_ANGLE;
+            manual_reverse_target_angle = accumulated_angle + MANUAL_REVERSE_ANGLE;
             manual_reverse_target_locked = 1;
             Set_Status(FEEDER_MANUAL_REVERSE);
         }
@@ -284,7 +307,7 @@ void Class_Feeder_FSM::Update(const Struct_Feeder_Input &input,
         control_type  = FEEDER_CONTROL_ANGLE;
         control_output = single_shot_target_angle;
 
-        if (Is_Single_Shot_Finished() ||
+        if (Is_Single_Shot_Finished(current_speed) ||
             Status[FEEDER_SINGLE_SHOT].Count_Time >= SINGLE_SHOT_TIMEOUT_COUNT)
         {
             Set_Status(FEEDER_SINGLE_COOLDOWN);
@@ -307,13 +330,13 @@ void Class_Feeder_FSM::Update(const Struct_Feeder_Input &input,
     case FEEDER_MANUAL_REVERSE:
         if (manual_reverse_target_locked == 0U)
         {
-            manual_reverse_target_angle = accumulated_angle - SINGLE_SHOT_ANGLE;
+            manual_reverse_target_angle = accumulated_angle + MANUAL_REVERSE_ANGLE;
             manual_reverse_target_locked = 1;
         }
         control_type  = FEEDER_CONTROL_ANGLE;
         control_output = manual_reverse_target_angle;
 
-        if (Is_Manual_Reverse_Finished() ||
+        if (Is_Manual_Reverse_Finished(current_speed) ||
             Status[FEEDER_MANUAL_REVERSE].Count_Time >= MANUAL_REVERSE_TIMEOUT_COUNT)
         {
             Set_Status(FEEDER_STOP);

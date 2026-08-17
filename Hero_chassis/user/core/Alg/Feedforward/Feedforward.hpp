@@ -2,6 +2,7 @@
 #define FEEDFORWARD_HPP 
 
 #include <math.h>
+#include "../Filter/Filter.hpp"
 #define MY_PI 3.141592653589
 #define g 9.80665
 
@@ -341,41 +342,55 @@ namespace Alg::Feedforward
             /**
              * @brief 构造函数
              * @param friction_value_ 摩擦力补偿值 与控制器输出同量纲
+             * @param deadband_ 目标值死区(与target同量纲)，死区内线性过渡，防止过零抖颤；0=无死区(硬开关)
              */
-            Friction(float friction_value_)
+            Friction(float friction_value_, float deadband_ = 0.0f)
+                : friction_value(friction_value_),
+                  deadband(deadband_ > 0.0f ? deadband_ : 0.0f),
+                  feedforward(0.0f)
             {
-                friction_value = friction_value_;
-                feedforward = 0.0f;
             }
 
             /**
              * @brief 计算摩擦力前馈值
              * @param target 目标值 无单位限制
-             * 
-             * 根据目标值正负方向施加摩擦力补偿
+             *
+             * 根据目标值正负方向施加摩擦力补偿。
+             * |target| > deadband 时全力补偿(突破静摩擦)；死区内线性过渡，
+             * 避免误差过零时补偿突跳导致云台在目标点附近抖颤。
              */
             void FrictionFeedforward(float target)
             {
-                if (target > 0.0f) {
+                if (target > deadband)
+                {
                     feedforward = friction_value;
-                } else if (target < 0.0f) {
+                }
+                else if (target < -deadband)
+                {
                     feedforward = -friction_value;
-                } else {
+                }
+                else if (deadband > 0.0f)
+                {
+                    feedforward = friction_value * (target / deadband);
+                }
+                else
+                {
                     feedforward = 0.0f;
                 }
             }
 
             /**
              * @brief 获取前馈输出值
-             * @return 前馈输出值 
+             * @return 前馈输出值
              */
-            float getFeedforward()
+            float getFeedforward() const
             {
                 return feedforward;
             }
 
         private:
             float friction_value;   // 摩擦力补偿值
+            float deadband;         // 目标值死区，死区内线性过渡
             float feedforward;      // 前馈输出
     };
 
@@ -398,8 +413,11 @@ namespace Alg::Feedforward
              */
             GimbalFullCompensation(float kJ = 0.0f, float dt = 0.001f, float viscousfriction = 0.0f, float coulombfriction = 0.0f)
                 : k_J(kJ), control_dt(dt), torque(0.0f), friction(0.0f),
-                  acc_feedforward(0.0f), last_ref_velocity(0.0f), filtered_acc(0.0f), 
-                  ViscousFriction(viscousfriction), CoulombFriction(coulombfriction){}
+                  acc_feedforward(0.0f), last_ref_velocity(0.0f), filtered_acc(0.0f),
+                  ViscousFriction(viscousfriction), CoulombFriction(coulombfriction)
+            {
+                acc_lpf.Configure(50.0f, control_dt, 0.70710678f);
+            }
 
             /**
              * @brief 摩擦力 + 惯量前馈
@@ -425,9 +443,7 @@ namespace Alg::Feedforward
                 // 角加速度前馈: k_J * θ̈_r (对期望速度差分 + 低通滤波)
                 float ref_acc_raw = (ref_velocity - last_ref_velocity) / control_dt;
                 last_ref_velocity = ref_velocity;
-                // 一阶低通滤波（0.1~0.3之间调整）
-                float alpha = 0.15f;
-                filtered_acc = filtered_acc * (1.0f - alpha) + ref_acc_raw * alpha;
+                filtered_acc = acc_lpf.Filter(ref_acc_raw);
                 acc_feedforward = k_J * filtered_acc;
 
                 // 总前馈 = 摩擦力 + 惯量前馈
@@ -467,6 +483,20 @@ namespace Alg::Feedforward
              */
             void setKJ(float kJ) { k_J = kJ; }
 
+            /**
+             * @brief 模式切换时复位内部状态，防止差分尖峰
+             * @param current_ref_velocity 当前期望速度(RPM)，用于同步 last_ref_velocity
+             */
+            void ResetState(float current_ref_velocity)
+            {
+                last_ref_velocity = current_ref_velocity;
+                filtered_acc = 0.0f;
+                acc_feedforward = 0.0f;
+                friction = 0.0f;
+                torque = 0.0f;
+                acc_lpf.Reset(0.0f);
+            }
+
         private:
             float k_J;                // 转动惯量前馈系数
             float control_dt;         // 控制周期(s)
@@ -474,7 +504,8 @@ namespace Alg::Feedforward
             float friction;           // 摩擦力前馈输出
             float acc_feedforward;    // 角加速度前馈量
             float last_ref_velocity;  // 上一次期望速度
-            float filtered_acc;       // 低通滤波后的角加速度
+            float filtered_acc;       // 二阶低通滤波后的角加速度
+            SecondOrderLPFFilter acc_lpf;
             float ViscousFriction;    // 粘性摩擦力系数
             float CoulombFriction;    // 库伦摩擦力系数
     };

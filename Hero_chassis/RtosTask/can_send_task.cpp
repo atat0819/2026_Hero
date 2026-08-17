@@ -108,6 +108,7 @@ static inline void ChassisMotorSendCANChecked()
 
 void ControlTask();
 void CAN1_RxCallback(HAL::CAN::Frame& frame);
+void vofa_sendN(const float *data, uint8_t count);
 
 
 RemoteData_t ChassisData;
@@ -119,6 +120,8 @@ RemoteData_t ChassisData;
 LPFFilter acc_filter_x(0.2f);
 LPFFilter acc_filter_y(0.2f);
 LPFFilter acc_filter_z(0.2f);
+SecondOrderLPFFilter chassis_vx_filter(8.0f, 0.001f, 0.70710678f);
+SecondOrderLPFFilter chassis_vy_filter(8.0f, 0.001f, 0.70710678f);
 
 
 // 4 个电机，4 个 PID
@@ -450,6 +453,8 @@ if (chassis_fsm.Get_Mode() == CHASSIS_STOP)
        motor_pid[i].reset();
        chassis_motor.setCAN((int16_t)0, i + 1);
    }
+   chassis_vx_filter.Reset(0.0f);
+   chassis_vy_filter.Reset(0.0f);
    ChassisMotorSendCANChecked();
 osDelay(1);
    continue;
@@ -463,9 +468,12 @@ osDelay(1);
 
           fk.OmniForKinematics(current_speed_rads[0], current_speed_rads[1], current_speed_rads[2], current_speed_rads[3]); // FK: 轮速 -> 底盘实测速度
 
-          // vx/vy 斜坡规划 (反馈同步: 实测速度已在目标与规划之间时, 规划器直接同步到实测, 避免滞后)
-          ramp_vx.TIM_Calculate_PeriodElapsedCallback(vx_body, fk.GetChassisVx());
-          ramp_vy.TIM_Calculate_PeriodElapsedCallback(vy_body, fk.GetChassisVy());
+          // vx/vy 斜坡规划 (实测反馈先做二阶低通, 再同步给规划器)
+          float chassis_vx_fb = chassis_vx_filter.Filter(fk.GetChassisVx());
+          float chassis_vy_fb = chassis_vy_filter.Filter(fk.GetChassisVy());
+
+          ramp_vx.TIM_Calculate_PeriodElapsedCallback(vx_body, chassis_vx_fb);
+          ramp_vy.TIM_Calculate_PeriodElapsedCallback(vy_body, chassis_vy_fb);
           vx_body = ramp_vx.GetOut();
           vy_body = ramp_vy.GetOut();
 
@@ -570,6 +578,7 @@ osDelay(1);
        //4. VOFA 实车对比 (10通道): I0=功率计实测, I1=模型预测, I2~I9=4电机(ω,I)
        //   下地跑时看 I0 vs I1 是否贴合
        //   需要重新录制拟合数据时, 切回下方 vofa_send9 采集模式
+/*
 vofa_send10(
     PowerData.power, post_power,
     chassis_motor.getVelocityRads(1), motor_output[0] * (20.0f / 16384.0f),
@@ -582,7 +591,15 @@ vofa_send10(
        //            chassis_motor.getVelocityRads(3), chassis_motor.getCurrent(3),
        //            chassis_motor.getVelocityRads(4), chassis_motor.getCurrent(4));
 // 修复后：加上了取地址符 &
-//HAL_UART_Transmit_DMA(&huart6, (const uint8_t*)&yaw_offset_rad, sizeof(yaw_offset_rad));
+*/
+       float vofa_speed[4] = {
+           fk.GetChassisVx(),
+           fk.GetChassisVy(),
+           chassis_vx_fb,
+           chassis_vy_fb
+       };
+       vofa_sendN(vofa_speed, 4);
+ //HAL_UART_Transmit_DMA(&huart6, (const uint8_t*)&yaw_offset_rad, sizeof(yaw_offset_rad));
 
     }
         
@@ -612,6 +629,26 @@ osDelay(1);
 
 //开vofa软件的justfloat模式
 uint8_t send_str2[sizeof(float) * 11]; // 分配11个float空间（44字节，10数据+1帧尾）
+void vofa_sendN(const float *data, uint8_t count)
+{
+    if (data == nullptr || count == 0)
+    {
+        return;
+    }
+
+    if (count > 10)
+    {
+        count = 10;
+    }
+
+    memcpy(send_str2, data, sizeof(float) * count);
+    *((uint32_t*)&send_str2[sizeof(float) * count]) = 0x7F800000;
+
+    HAL::UART::Data tx_data{send_str2, static_cast<uint16_t>(sizeof(float) * (count + 1))};
+    HAL::UART::get_uart_bus_instance().get_uart3().transmit_dma(tx_data);
+}
+
+#if 0
 void vofa_send9(float x1, float x2, float x3, float x4, float x5, float x6, float x7, float x8, float x9)
 {
     const uint8_t sendSize = sizeof(float); // 单浮点数占4字节
@@ -631,7 +668,7 @@ void vofa_send9(float x1, float x2, float x3, float x4, float x5, float x6, floa
     *((uint32_t*)&send_str2[sizeof(float) * 9]) = 0x7F800000; // 小端存储为 00 00 80 7F
 
     // 通过 UART 库发送（使用 UART3，UART6 留给裁判系统）
-    HAL::UART::Data tx_data{send_str2, sizeof(float) * 10};
+    HAL::UART::Data tx_data{send_str2, static_cast<uint16_t>(sizeof(float) * 10)};
     HAL::UART::get_uart_bus_instance().get_uart3().transmit_dma(tx_data);
 }
 
@@ -655,9 +692,10 @@ void vofa_send10(float x1, float x2, float x3, float x4, float x5, float x6, flo
     // 写入帧尾
     *((uint32_t*)&send_str2[sizeof(float) * 10]) = 0x7F800000;
 
-    HAL::UART::Data tx_data{send_str2, sizeof(float) * 11};
+    HAL::UART::Data tx_data{send_str2, static_cast<uint16_t>(sizeof(float) * 11)};
     HAL::UART::get_uart_bus_instance().get_uart3().transmit_dma(tx_data);
 }
+#endif
 
 
  

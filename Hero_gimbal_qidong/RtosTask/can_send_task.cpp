@@ -12,7 +12,7 @@
 #include "../communication_between_boards/input_dispatcher.hpp"
 #include "../user/core/Alg/Feedforward/Feedforward.hpp"
 #include <cstring> // memcpy (vofa_send 打包用)
-
+#include "gimbal_task.hpp"
 namespace
 {
 constexpr float YAW_HALF_CIRCLE_DEG = 180.0f;
@@ -243,6 +243,10 @@ static uint16_t startup_protect = 0; // 上电保护计数器
    else if (frame.id >= 0x01 && frame.id <= 0x10)
     {
         dm666.Parse(frame);
+    }
+   else if (frame.id >= 0x201 && frame.id <= 0x203)
+    {
+        friction_motor.Parse(frame);
     }
     });
 

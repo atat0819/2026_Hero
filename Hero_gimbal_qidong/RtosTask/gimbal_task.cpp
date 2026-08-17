@@ -3,13 +3,20 @@
 #include "queue.h"
 #include "cmsis_os.h"
 #include "remote_control_task.hpp"
+#include "can_send_task.hpp"
 #include "../communication_between_boards/input_dispatcher.hpp"
 #include "../user/core/BSP/Motor/Dm/DmMotor.hpp"
+#include "../user/core/BSP/Motor/Dji/DjiMotor.hpp"
+#include "../feeder_fsm/friction_fsm.hpp"
+
 
 
 BSP::Motor::DM::J4310<1> dm666(0x00,{0x02},{0x01}); // 单个 DM4310，电机 ID 0x01，master ID 0x02（反馈帧 ID=0x00+0x02，控制帧 ID=0x01）
  DM4310_State_t dm4310_state[1]; // 存储 DM4310 电机的状态数据
 
+const uint8_t chassis_motor_idxs[3] = {1, 2, 3}; // 3 个电机的接收偏移 ID
+BSP::Motor::Dji::GM3508<3> friction_motor(0x200, chassis_motor_idxs, 0x200); // 电机控制器，初始ID为0x200，发送ID为0x2FF
+DJI3508_State_t dji3508_state[3]; // 存储三个电机的状态数据
 
 
 using Remote = BSP::REMOTE_CONTROL::RemoteController;
@@ -22,6 +29,12 @@ float feeder_iq = 0.0f; // 当前电流
 float feeder_target_speed = 0.0f; // 来自pid计算的目标速度
 float feeder_velocity_cmd_rad_s = 0.0f; // DM4310 MIT 速度指令 (rad/s)
 float feeder_torque_ff_nm = 0.0f; // DM4310 MIT 力矩前馈 (Nm)
+float friction_current_speed_left = 0.0f;
+float friction_current_speed_right = 0.0f;
+float friction_current_speed_top = 0.0f;
+float left_friction_out = 0.0f;
+float right_friction_out = 0.0f;
+float top_friction_out = 0.0f;
 
 // 在 gimbal_task 外部或循环上方定义
 float last_gimbal_roll = 0.0f; // 用于边缘触发检测的上一次滚轮值
@@ -29,9 +42,12 @@ float last_gimbal_roll = 0.0f; // 用于边缘触发检测的上一次滚轮值
 // feeder_mode, trigger_pressed 已迁移至 FSM 内部判定
 
 void DM4310_feedback();
+void DJI3508_feedback();
 static float Limit_Feeder_DM_Velocity(float velocity_rad_s);
+static float Brake_Friction_To_Stop(float speed);
 
 Class_Feeder_FSM feeder_fsm;
+Class_Friction_FSM friction_fsm;
 
 
 
@@ -47,10 +63,19 @@ static constexpr float FEEDER_FF_MAX_SPEED_RPM = 100.0f;
 ALG::PID::PID feeder_angle_pid(6.0f, 0.00f, 0.0f, FEEDER_DM_VEL_LIMIT_DEGPS, 1000.0f, 100.0f);
 ALG::PID::PID feeder_angle_pid_speed(6.0f, 0.00f, 0.0f, FEEDER_DM_VEL_LIMIT_DEGPS, 1000.0f, 100.0f);
 ALG::PID::PID feeder_stop_pid(0.0f, 0.00f, 0.0f, 20000.0f, 1000.0f, 100.0f);
+ALG::PID::PID left_friction_pid(37.0f, 0.13f, 0.0f, 16384.0f, 1000.0f, 100.0f);
+ALG::PID::PID right_friction_pid(37.0f, 0.13f, 0.0f, 16384.0f, 1000.0f, 100.0f);
+ALG::PID::PID top_friction_pid(37.0f, 0.13f, 0.0f, 16384.0f, 1000.0f, 100.0f);
+
+static constexpr float FRICTION_STOP_DEADBAND_RPM = 80.0f;
+static constexpr float FRICTION_BRAKE_KP = 6.0f;
+static constexpr float FRICTION_BRAKE_MAX_OUTPUT = 6000.0f;
+static constexpr float FRICTION_REVERSE_BRAKE_LIMIT = 2500.0f;
 
 extern "C" void gimbal_task(void *argument)
 {
     feeder_fsm.Init();
+    friction_fsm.Init();
 
     dm666.On(1,BSP::Motor::DM::Model::MIT);
     osDelay(100); // 等待电机上电稳定
@@ -66,7 +91,9 @@ extern "C" void gimbal_task(void *argument)
 uint8_t force_stop = 0;
 
  DM4310_feedback();
+ DJI3508_feedback();
 /******************************************************************************* */
+friction_fsm.TIM_Calculate_PeriodElapsedCallback();
 feeder_fsm.TIM_Calculate_PeriodElapsedCallback();
 /************************************************************************************ */
 // FSM 内部自行判断模式：传入原始输入，FSM 根据 s1/s2/键鼠 自行决定
@@ -82,8 +109,19 @@ feeder_input.scroll_value   = remoteController.get_scroll_();
 feeder_input.vision_fire    = vision_comm.IsFireCommanded();
 feeder_input.is_keymouse    = is_keymouse;
 
+Struct_Friction_Input friction_input = {};
+friction_input.s1          = RemoteData.s1;
+friction_input.s2          = RemoteData.s2;
+friction_input.friction_on = input_dispatcher.IsFeederOn();
+friction_input.is_keymouse = is_keymouse;
+
 force_stop = 0;
-if (!is_keymouse)
+if (!remoteController.isConnected())
+{
+    // 遥控器失联：直接强制停止，不依赖拨杆组合
+    force_stop = 1;
+}
+else if (!is_keymouse)
 {
     // 遥控器模式下特定挡位 = 强制停止
     if ((RemoteData.s1 == Remote::DOWN  && RemoteData.s2 == Remote::DOWN)  ||
@@ -108,6 +146,9 @@ last_gimbal_roll = RemoteData.gimbal_roll;
     feeder_current_angle = dm4310_state[0].multi_angle; // 从DM4310电机获取多圈累积角度（输出轴坐标, °）
     feeder_speed = dm4310_state[0].velocity_rpm;
     feeder_iq = dm4310_state[0].current_a;
+    friction_current_speed_left = dji3508_state[0].velocity_rpm;
+    friction_current_speed_right = dji3508_state[1].velocity_rpm;
+    friction_current_speed_top = dji3508_state[2].velocity_rpm;
 
 feeder_fsm.Update(feeder_input, feeder_current_angle, feeder_speed, feeder_iq);
 /********************************************************************************** */
@@ -184,11 +225,94 @@ else
     prev_control_type = current_control_type;
 
 /********************************************************************************** */
+friction_fsm.Update(friction_input,
+                    friction_current_speed_left,
+                    friction_current_speed_right,
+                    friction_current_speed_top);
+
+const float left_friction_target = friction_fsm.Get_Left_Control_Output();
+const float right_friction_target = friction_fsm.Get_Right_Control_Output();
+const float top_friction_target = friction_fsm.Get_Top_Control_Output();
+
+if (force_stop ||
+    (left_friction_target == 0.0f &&
+     right_friction_target == 0.0f &&
+     top_friction_target == 0.0f))
+{
+    left_friction_pid.reset();
+    right_friction_pid.reset();
+    top_friction_pid.reset();
+
+    left_friction_out = Brake_Friction_To_Stop(friction_current_speed_left);
+    right_friction_out = Brake_Friction_To_Stop(friction_current_speed_right);
+    top_friction_out = Brake_Friction_To_Stop(friction_current_speed_top);
+}
+else
+{
+    left_friction_out = left_friction_pid.UpDate(
+        left_friction_target,
+        friction_current_speed_left);
+
+    right_friction_out = right_friction_pid.UpDate(
+        right_friction_target,
+        friction_current_speed_right);
+
+    top_friction_out = top_friction_pid.UpDate(
+        top_friction_target,
+        friction_current_speed_top);
+
+    if ((left_friction_target < 0.0f && left_friction_out > 0.0f) ||
+        (left_friction_target > 0.0f && left_friction_out < 0.0f))
+    {
+        if (left_friction_out > FRICTION_REVERSE_BRAKE_LIMIT)
+        {
+            left_friction_out = FRICTION_REVERSE_BRAKE_LIMIT;
+        }
+        else if (left_friction_out < -FRICTION_REVERSE_BRAKE_LIMIT)
+        {
+            left_friction_out = -FRICTION_REVERSE_BRAKE_LIMIT;
+        }
+    }
+
+    if ((right_friction_target < 0.0f && right_friction_out > 0.0f) ||
+        (right_friction_target > 0.0f && right_friction_out < 0.0f))
+    {
+        if (right_friction_out > FRICTION_REVERSE_BRAKE_LIMIT)
+        {
+            right_friction_out = FRICTION_REVERSE_BRAKE_LIMIT;
+        }
+        else if (right_friction_out < -FRICTION_REVERSE_BRAKE_LIMIT)
+        {
+            right_friction_out = -FRICTION_REVERSE_BRAKE_LIMIT;
+        }
+    }
+
+    if ((top_friction_target < 0.0f && top_friction_out > 0.0f) ||
+        (top_friction_target > 0.0f && top_friction_out < 0.0f))
+    {
+        if (top_friction_out > FRICTION_REVERSE_BRAKE_LIMIT)
+        {
+            top_friction_out = FRICTION_REVERSE_BRAKE_LIMIT;
+        }
+        else if (top_friction_out < -FRICTION_REVERSE_BRAKE_LIMIT)
+        {
+            top_friction_out = -FRICTION_REVERSE_BRAKE_LIMIT;
+        }
+    }
+}
+
+/********************************************************************************** */
 // 拨弹轮通过 DM4310 MIT 模式控制：KP=0，使用 vel + KD 做速度阻尼
 {
     feeder_velocity_cmd_rad_s = Limit_Feeder_DM_Velocity(feeder_velocity_cmd_rad_s);
     dm666.ctrl_Mit(1, 0.0f, feeder_velocity_cmd_rad_s, 0.0f, SINGLE_KD, feeder_torque_ff_nm);
 }
+/********************************************************************************** */
+friction_motor.setCAN((int16_t)left_friction_out, 1);
+friction_motor.setCAN((int16_t)right_friction_out, 2);
+friction_motor.setCAN((int16_t)top_friction_out, 3);
+friction_motor.setCAN(0, 4);
+friction_motor.sendCAN();
 /**************************************************************************** */
 //vofa_send(feeder_fsm.Get_Control_Output(),feeder_fsm.Get_Accumulated_Angle(), feeder_speed, 360, 0, 0); // 发送数据到VOFA
 vofa_send(
@@ -252,4 +376,40 @@ void DM4310_feedback() {
         dm4310_state[i].current_a    = dm666.getTorque(motor_id);
         dm4310_state[i].temperature  = dm666.getTemperature(motor_id);
     }
+}
+
+void DJI3508_feedback()
+{
+    for (int i = 0; i < 3; i++)
+    {
+        const uint8_t motor_id = i + 1;
+        dji3508_state[i].multi_angle = friction_motor.getAddAngleDeg(motor_id);
+        dji3508_state[i].angle_deg = friction_motor.getAngleDeg(motor_id);
+        dji3508_state[i].angle_rad = friction_motor.getAngleRad(motor_id);
+        dji3508_state[i].velocity_rpm = friction_motor.getVelocityRpm(motor_id);
+        dji3508_state[i].velocity_rads = friction_motor.getVelocityRads(motor_id);
+        dji3508_state[i].current_a = friction_motor.getCurrent(motor_id);
+        dji3508_state[i].temperature = static_cast<uint8_t>(friction_motor.getTemperature(motor_id));
+    }
+}
+
+static float Brake_Friction_To_Stop(float speed)
+{
+    if (speed > -FRICTION_STOP_DEADBAND_RPM && speed < FRICTION_STOP_DEADBAND_RPM)
+    {
+        return 0.0f;
+    }
+
+    float output = -FRICTION_BRAKE_KP * speed;
+
+    if (output > FRICTION_BRAKE_MAX_OUTPUT)
+    {
+        output = FRICTION_BRAKE_MAX_OUTPUT;
+    }
+    else if (output < -FRICTION_BRAKE_MAX_OUTPUT)
+    {
+        output = -FRICTION_BRAKE_MAX_OUTPUT;
+    }
+
+    return output;
 }
