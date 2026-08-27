@@ -18,7 +18,7 @@ bool Class_Friction_FSM::Is_Speed_Ready(float left_speed,
 {
     return left_speed <= READY_SPEED_THRESHOLD &&
            right_speed >= -READY_SPEED_THRESHOLD &&
-           top_speed <= READY_SPEED_THRESHOLD;
+           top_speed >= -READY_SPEED_THRESHOLD;
 }
 
 // ===== FSM 内部判断 friction_mode =====
@@ -76,7 +76,7 @@ void Class_Friction_FSM::Update(const Struct_Friction_Input &input,
         case FRICTION_STARTING:
             left_control_output = TARGET_SPEED;
             right_control_output = -TARGET_SPEED;
-            top_control_output = TARGET_SPEED;
+            top_control_output = -TARGET_SPEED;
 
             if (current_mode == FRICTION_MODE_STOP)
             {
@@ -92,7 +92,7 @@ void Class_Friction_FSM::Update(const Struct_Friction_Input &input,
         case FRICTION_READY:
             left_control_output = TARGET_SPEED;
             right_control_output = -TARGET_SPEED;
-            top_control_output = TARGET_SPEED;
+            top_control_output = -TARGET_SPEED;
 
             if (current_mode == FRICTION_MODE_STOP)
             {

@@ -278,15 +278,15 @@ friction_motor.sendCAN();
 /**************************************************************************** */
 // VOFA 通道: ch1 拨弹轮目标角度(deg), ch2 拨弹轮累积角度(deg), ch3 拨弹轮当前速度(RPM), ch4 拨弹轮电流(A)
 //            ch5 左摩擦轮转速(RPM), ch6 右摩擦轮转速(RPM)
-float vofa_data[] = {
-    feeder_fsm.Get_Control_Output(),
-    feeder_fsm.Get_Accumulated_Angle(),
-    feeder_speed,
-    feeder_iq,
-    friction_current_speed_left,
-    friction_current_speed_right,
-};
-vofa_sendN(vofa_data, static_cast<uint8_t>(sizeof(vofa_data) / sizeof(vofa_data[0]))); // 发送数据到VOFA
+//float vofa_data[] = {
+//    feeder_fsm.Get_Control_Output(),
+//    feeder_fsm.Get_Accumulated_Angle(),
+//    feeder_speed,
+//    feeder_iq,
+//    friction_current_speed_left,
+//    friction_current_speed_right,
+//};
+//vofa_sendN(vofa_data, static_cast<uint8_t>(sizeof(vofa_data) / sizeof(vofa_data[0]))); // 发送数据到VOFA
 
 /****************************************************************************** */
 vTaskDelay(5); // 每5ms执行一次控制循环

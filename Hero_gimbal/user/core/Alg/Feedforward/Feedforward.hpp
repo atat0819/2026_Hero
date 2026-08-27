@@ -511,6 +511,186 @@ namespace Alg::Feedforward
     };
 
     /**
+     * @class DOB
+     * @brief Simple disturbance observer for a speed-domain nominal model.
+     *
+     * Nominal model:
+     *      x_dot = a * x + b * u
+     *
+     * The observer estimates the equivalent input disturbance:
+     *      d_hat = Q(s) * (((x_dot - a * x) / b) - u)
+     *
+     * getOutput() returns the compensation input:
+     *      output = -gain * d_hat
+     */
+    class DOB
+    {
+        public:
+            /**
+             * @brief Construct a simple DOB.
+             * @param a_ Nominal model speed coefficient.
+             * @param b_ Nominal model input gain, must match input units.
+             * @param dt_ Control period in seconds.
+             * @param cutoff_hz_ Q-filter cutoff frequency in Hz.
+             * @param output_limit_ Absolute compensation output limit.
+             * @param gain_ Compensation gain. Start small, then increase.
+             * @param damping_ratio_ Q-filter damping ratio.
+             */
+            DOB(float a_, float b_,
+                float dt_ = 0.001f,
+                float cutoff_hz_ = 35.0f,
+                float output_limit_ = 300.0f,
+                float gain_ = 1.0f,
+                float damping_ratio_ = 0.70710678f)
+                : a(a_),
+                  b(b_),
+                  control_dt(dt_),
+                  output_limit(output_limit_ > 0.0f ? output_limit_ : 0.0f),
+                  gain(gain_),
+                  Output(0.0f),
+                  disturbance_hat(0.0f),
+                  raw_disturbance(0.0f),
+                  X_dot(0.0f),
+                  Input(0.0f),
+                  Feedback(0.0f),
+                  last_feedback(0.0f),
+                  initialized(false),
+                  q_lpf(cutoff_hz_, dt_, damping_ratio_)
+            {
+            }
+
+            /**
+             * @brief Reset observer history.
+             * @param feedback Current feedback value used to sync the differentiator.
+             */
+            void ResetState(float feedback = 0.0f)
+            {
+                Output = 0.0f;
+                disturbance_hat = 0.0f;
+                raw_disturbance = 0.0f;
+                X_dot = 0.0f;
+                Input = 0.0f;
+                Feedback = feedback;
+                last_feedback = feedback;
+                initialized = false;
+                q_lpf.Reset(0.0f);
+            }
+
+            /**
+             * @brief Update DOB state.
+             * @param Input_ Input that has actually been applied to the plant.
+             * @param Feedback_ Current speed feedback.
+             */
+            void DOB_Update(float Input_, float Feedback_)
+            {
+                Input = Input_;
+                Feedback = Feedback_;
+
+                if (!initialized || control_dt <= 0.0f || b == 0.0f)
+                {
+                    last_feedback = Feedback;
+                    initialized = true;
+                    Output = 0.0f;
+                    disturbance_hat = 0.0f;
+                    raw_disturbance = 0.0f;
+                    X_dot = 0.0f;
+                    q_lpf.Reset(0.0f);
+                    return;
+                }
+
+                X_dot = (Feedback - last_feedback) / control_dt;
+                last_feedback = Feedback;
+
+                const float equivalent_input = (X_dot - a * Feedback) / b;
+                raw_disturbance = equivalent_input - Input;
+                disturbance_hat = q_lpf.Filter(raw_disturbance);
+
+                Output = -gain * disturbance_hat;
+                LimitOutput();
+            }
+
+            /**
+             * @brief Update DOB state and return compensation output.
+             */
+            float Update(float Input_, float Feedback_)
+            {
+                DOB_Update(Input_, Feedback_);
+                return Output;
+            }
+
+            void ConfigureQ(float cutoff_hz, float dt, float damping_ratio = 0.70710678f)
+            {
+                control_dt = dt;
+                q_lpf.Configure(cutoff_hz, dt, damping_ratio);
+                ResetState(Feedback);
+            }
+
+            void setGain(float gain_)
+            {
+                gain = gain_;
+            }
+
+            void setOutputLimit(float output_limit_)
+            {
+                output_limit = output_limit_ > 0.0f ? output_limit_ : 0.0f;
+                LimitOutput();
+            }
+
+            float getOutput() const
+            {
+                return Output;
+            }
+
+            float getDisturbanceEstimate() const
+            {
+                return disturbance_hat;
+            }
+
+            float getRawDisturbance() const
+            {
+                return raw_disturbance;
+            }
+
+            float getAcceleration() const
+            {
+                return X_dot;
+            }
+
+        private:
+            void LimitOutput()
+            {
+                if (output_limit <= 0.0f)
+                {
+                    return;
+                }
+
+                if (Output > output_limit)
+                {
+                    Output = output_limit;
+                }
+                else if (Output < -output_limit)
+                {
+                    Output = -output_limit;
+                }
+            }
+
+            float a;                  // Nominal speed coefficient.
+            float b;                  // Nominal input gain.
+            float control_dt;         // Control period in seconds.
+            float output_limit;       // Compensation output limit.
+            float gain;               // Compensation gain.
+            float Output;             // Compensation output: -gain * disturbance_hat.
+            float disturbance_hat;    // Q-filtered equivalent input disturbance.
+            float raw_disturbance;    // Unfiltered equivalent input disturbance.
+            float X_dot;              // Differentiated feedback.
+            float Input;              // Applied plant input.
+            float Feedback;           // Current speed feedback.
+            float last_feedback;      // Previous speed feedback.
+            bool initialized;         // Differentiator initialization flag.
+            SecondOrderLPFFilter q_lpf;
+    };
+
+    /**
      * @class UDE
      * @brief 不确定性与扰动估计器 (Uncertainty and Disturbance Estimator)
      * 
@@ -522,59 +702,114 @@ namespace Alg::Feedforward
         public:
             /**
              * @brief 构造函数
-             * @param a_ 系统特征系数a
-             * @param b_ 系统特征系数b（控制增益）
+             * @param a_ 系统特征系数 a，模型项: speed_dot = a * speed + b * input + disturbance
+             * @param b_ 系统控制增益，单位需与 input 输出量纲匹配
+             * @param dt_ 控制周期(s)
+             * @param cutoff_hz_ 加速度观测二阶低通截止频率
+             * @param output_limit_ 补偿输出限幅
+             * @param gain_ 扰动补偿增益，建议从 0.2~0.4 起调
              */
-            UDE(float a_, float b_)
+            UDE(float a_, float b_,
+                float dt_ = 0.001f,
+                float cutoff_hz_ = 35.0f,
+                float output_limit_ = 300.0f,
+                float gain_ = 0.3f)
+                : a(a_),
+                  b(b_),
+                  control_dt(dt_),
+                  output_limit(output_limit_),
+                  gain(gain_),
+                  Output(0.0f),
+                  X_dot(0.0f),
+                  Input(0.0f),
+                  Feedback(0.0f),
+                  last_feedback(0.0f),
+                  initialized(false),
+                  acc_lpf(cutoff_hz_, dt_, 0.70710678f)
             {
-                a = a_;
-                b = b_;
-                Feedback = 0.0f;
-                Output = 0.0f;
-                X_dot = 0.0f;
-                Input = 0.0f;
             }
 
             /**
              * @brief 重置观测器状态
-             * 
+             *
              * 在切换状态或重新启动时调用，防止历史过时的观测数据产生错误补偿
              */
-            void ResetState()
+            void ResetState(float feedback = 0.0f)
             {
                 Output = 0.0f;
                 X_dot = 0.0f;
                 Input = 0.0f;
+                Feedback = feedback;
+                last_feedback = feedback;
+                initialized = false;
+                acc_lpf.Reset(0.0f);
             }
 
             /**
              * @brief UDE 观测器状态更新
-             * @param Input_ 上一控制周期的系统输入（遵守物理因果律的历史输出量）
-             * @param X_dot_ 当前系统状态的导数观测值（如当前实际的角加速度）
+             * @param Input_ 上一控制周期已经作用到系统的输出量
+             * @param Feedback_ 当前速度反馈，类内部差分得到角加速度
              */
-            void UDE_Update(float Input_, float X_dot_)
+            void UDE_Update(float Input_, float Feedback_)
             {
                 Input = Input_;
-                X_dot = X_dot_;
-                
-                Output = 1/b * (X_dot - a * Feedback - b * Input);
+                Feedback = Feedback_;
+
+                if (!initialized || control_dt <= 0.0f || b == 0.0f)
+                {
+                    last_feedback = Feedback;
+                    initialized = true;
+                    Output = 0.0f;
+                    X_dot = 0.0f;
+                    acc_lpf.Reset(0.0f);
+                    return;
+                }
+
+                float raw_acc = (Feedback - last_feedback) / control_dt;
+                last_feedback = Feedback;
+                X_dot = acc_lpf.Filter(raw_acc);
+
+                const float model_acc = a * Feedback + b * Input;
+                const float disturbance_equivalent_input =
+                    -(X_dot - model_acc) / b;
+
+                Output = gain * disturbance_equivalent_input;
+                if (Output > output_limit)
+                {
+                    Output = output_limit;
+                }
+                else if (Output < -output_limit)
+                {
+                    Output = -output_limit;
+                }
             }
 
             /**
              * @brief 获取 UDE 扰动补偿输出
              * @return 扰动补偿前馈量
              */
-            float getOutput()
+            float getOutput() const
             {
                 return Output;
             }
 
+            float getAcceleration() const
+            {
+                return X_dot;
+            }
+
         private:
-            float Output;   // UDE 扰动补偿输出
-            float X_dot;    // 当前系统状态的导数观测值
-            float a, b;     // 系统特征系数
-            float Input;    // 上一控制周期的系统输入
-            float Feedback; // 上一控制周期的系统状态
+            float a, b;                 // 系统特征系数
+            float control_dt;           // 控制周期(s)
+            float output_limit;         // 补偿输出限幅
+            float gain;                 // 补偿增益
+            float Output;               // UDE 扰动补偿输出
+            float X_dot;                // 低通后的角加速度观测值
+            float Input;                // 上一控制周期的系统输入
+            float Feedback;             // 当前系统速度反馈
+            float last_feedback;        // 上一次系统速度反馈
+            bool initialized;           // 差分初始化标志
+            SecondOrderLPFFilter acc_lpf;
     };
 }
 

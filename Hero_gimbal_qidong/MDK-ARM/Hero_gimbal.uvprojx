@@ -1042,16 +1042,6 @@
               <FileType>8</FileType>
               <FilePath>..\user\core\Alg\UtilityFunction\SlopPlanning.cpp</FilePath>
             </File>
-            <File>
-              <FileName>friction_fsm.cpp</FileName>
-              <FileType>8</FileType>
-              <FilePath>..\feeder_fsm\friction_fsm.cpp</FilePath>
-            </File>
-            <File>
-              <FileName>friction_fsm.hpp</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\feeder_fsm\friction_fsm.hpp</FilePath>
-            </File>
           </Files>
         </Group>
         <Group>
@@ -1264,6 +1254,16 @@
               <FileName>feeder_fsm.hpp</FileName>
               <FileType>5</FileType>
               <FilePath>..\feeder_fsm\feeder_fsm.hpp</FilePath>
+            </File>
+            <File>
+              <FileName>friction_fsm.cpp</FileName>
+              <FileType>8</FileType>
+              <FilePath>..\feeder_fsm\friction_fsm.cpp</FilePath>
+            </File>
+            <File>
+              <FileName>friction_fsm.hpp</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\feeder_fsm\friction_fsm.hpp</FilePath>
             </File>
             <File>
               <FileName>gimbal_fsm.cpp</FileName>

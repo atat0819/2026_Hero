@@ -83,7 +83,7 @@ public:
     ALG::PID::PID& Get_Follow_PID() { return follow_pid; }
 
     // 小陀螺自旋角速度 (rad/s)，放 public 便于 Keil 实时调试
-    float gyro_spin_speed = 2.0f;
+    float gyro_spin_speed = 4.0f;
 
     // 跟随模式最大旋转角速度 (rad/s)，放 public 便于 Keil 实时调试
     float max_follow_speed = 4.0f;

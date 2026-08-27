@@ -24,7 +24,7 @@
 #include "../user/core/APP/Referee/RM_RefereeSystem.h"
 #include "../user/core/Alg/UtilityFunction/SlopePlanning.hpp"
 
-#define Gain 4.0
+#define Gain 4.7
 
 QueueHandle_t motorspeedtargetQueue; // 声明一个全局队列句柄，用于在任务之间传递电机转速数据
 QueueHandle_t motorCurrentDataQueue; // 声明一个全局队列句柄，用于在任务之间传递电机当前数据
@@ -66,8 +66,8 @@ Communication::GimbalRefree gimbal_refree;
 
 // vx/vy 斜坡规划 (防功率尖峰/麦轮打滑), 反馈同步用 FK 实测底盘速度; w 方向不规划, 保持转向响应
 // 斜率单位: 每控制周期增量, 1kHz 循环下 0.008 ≈ 8 m/s² 加速度
-Alg::Utility::SlopePlanning ramp_vx(0.007f, 0.006f);
-Alg::Utility::SlopePlanning ramp_vy(0.007f, 0.006f);
+Alg::Utility::SlopePlanning ramp_vx(0.006f, 0.0054f);
+Alg::Utility::SlopePlanning ramp_vy(0.006f, 0.0054f);
 
 
 // 模板参数 <N> 表示电机数量
@@ -126,10 +126,10 @@ SecondOrderLPFFilter chassis_vy_filter(8.0f, 0.001f, 0.70710678f);
 
 // 4 个电机，4 个 PID
 ALG::PID::PID motor_pid[4] = {
-    {300.0f, 0.03f, 0.0f, 16384.0f, 5000.0f, 500.0f},   //电机1 (扫频PID)
-	{300.0f, 0.03f, 0.0f, 16384.0f, 5000.0f, 500.0f},    //电机2
-	{300.0f, 0.03f, 0.0f, 16384.0f, 5000.0f, 500.0f},    //电机3
-	{300.0f, 0.03f, 0.0f, 16384.0f, 5000.0f, 500.0f}     //电机4	
+    {330.0f, 0.03f, 0.0f, 16384.0f, 5000.0f, 500.0f},   //电机1 (扫频PID)
+	{350.0f, 0.03f, 0.0f, 16384.0f, 5000.0f, 500.0f},    //电机2
+	{330.0f, 0.03f, 0.0f, 16384.0f, 5000.0f, 500.0f},    //电机3
+	{320.0f, 0.03f, 0.0f, 16384.0f, 5000.0f, 500.0f}     //电机4	
 };
 
 ALG::PID::PID test_pid = {0.0f, 0.0f, 0.0f, 10000.0f, 5000.0f, 500.0f};
@@ -498,7 +498,7 @@ osDelay(1);
 	    power_strategy.Update(
 	        supercap.isOnline(),                              // 超电在线状态
 	        !RM_RefereeSystemDirFlag,                         // 裁判系统在线
-	        90,//(float)ext_power_heat_data_0x0202.chassis_power_limit,  // 裁判功率上限 (W)
+	        80,//(float)ext_power_heat_data_0x0202.chassis_power_limit,  // 裁判功率上限 (W)
 	        (float)ext_power_heat_data_0x0202.chassis_power_buffer, // 缓冲能量 (J)
 	        supercap.getEnergy()                              // 超电剩余能量 (J)
 	    );
@@ -645,7 +645,7 @@ void vofa_sendN(const float *data, uint8_t count)
     *((uint32_t*)&send_str2[sizeof(float) * count]) = 0x7F800000;
 
     HAL::UART::Data tx_data{send_str2, static_cast<uint16_t>(sizeof(float) * (count + 1))};
-    HAL::UART::get_uart_bus_instance().get_uart3().transmit_dma(tx_data);
+    HAL::UART::get_uart_bus_instance().get_uart6().transmit_dma(tx_data);
 }
 
 #if 0
