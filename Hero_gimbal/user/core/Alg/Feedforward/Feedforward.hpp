@@ -411,10 +411,12 @@ namespace Alg::Feedforward
              * @param viscousfriction 粘性摩擦系数
              * @param coulombfriction 库伦摩擦系数
              */
-            GimbalFullCompensation(float kJ = 0.0f, float dt = 0.001f, float viscousfriction = 0.0f, float coulombfriction = 0.0f)
+            GimbalFullCompensation(float kJ = 0.0f, float dt = 0.001f, float viscousfriction = 0.0f,
+                                   float coulombfriction = 0.0f, float friction_deadzone = 3.0f)
                 : k_J(kJ), control_dt(dt), torque(0.0f), friction(0.0f),
                   acc_feedforward(0.0f), last_ref_velocity(0.0f), filtered_acc(0.0f),
-                  ViscousFriction(viscousfriction), CoulombFriction(coulombfriction)
+                  ViscousFriction(viscousfriction), CoulombFriction(coulombfriction),
+                  FrictionDeadzone(friction_deadzone)
             {
                 acc_lpf.Configure(50.0f, control_dt, 0.70710678f);
             }
@@ -430,15 +432,19 @@ namespace Alg::Feedforward
             {
                 // 摩擦力补偿: k * θ̇ + sgn(θ̇) * fc
                 // 使用平滑过渡代替sgn，消除零速附近抖颤，也就是零点线性化。
-                float deadzone = 3.0f;  // 死区阈值(RPM)，在此范围内线性过渡
-                float sgn;
-                if (feedback_velocity > deadzone)
+                float deadzone = (FrictionDeadzone > 0.001f) ? FrictionDeadzone : 0.001f;
+                float ref_abs = (ref_velocity >= 0.0f) ? ref_velocity : -ref_velocity;
+                float friction_scale = ref_abs / deadzone;
+                if (friction_scale > 1.0f)
+                    friction_scale = 1.0f;
+
+                float sgn = 0.0f;
+                if (ref_velocity > 0.0f)
                     sgn = 1.0f;
-                else if (feedback_velocity < -deadzone)
+                else if (ref_velocity < 0.0f)
                     sgn = -1.0f;
-                else
-                    sgn = feedback_velocity / deadzone;  // 线性过渡
-                friction = ViscousFriction * feedback_velocity + sgn * CoulombFriction;
+
+                friction = friction_scale * (ViscousFriction * feedback_velocity + sgn * CoulombFriction);
 
                 // 角加速度前馈: k_J * θ̈_r (对期望速度差分 + 低通滤波)
                 float ref_acc_raw = (ref_velocity - last_ref_velocity) / control_dt;
@@ -482,6 +488,7 @@ namespace Alg::Feedforward
              * @param kJ 新的k_J值
              */
             void setKJ(float kJ) { k_J = kJ; }
+            void setFrictionDeadzone(float friction_deadzone) { FrictionDeadzone = friction_deadzone; }
 
             /**
              * @brief 模式切换时复位内部状态，防止差分尖峰
@@ -508,6 +515,7 @@ namespace Alg::Feedforward
             SecondOrderLPFFilter acc_lpf;
             float ViscousFriction;    // 粘性摩擦力系数
             float CoulombFriction;    // 库伦摩擦力系数
+            float FrictionDeadzone;   // 期望速度线性死区，死区内按比例缩小摩擦前馈
     };
 
     /**

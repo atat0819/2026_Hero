@@ -884,6 +884,11 @@
               <FileType>5</FileType>
               <FilePath>..\user\core\Alg\fire_control\fire_control.hpp</FilePath>
             </File>
+            <File>
+              <FileName>Feedforward.hpp</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\user\core\Alg\Feedforward\Feedforward.hpp</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
