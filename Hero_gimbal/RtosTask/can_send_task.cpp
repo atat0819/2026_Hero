@@ -70,9 +70,9 @@ CAN_RxHeaderTypeDef rxHeader0, rxHeader1;
 /******************************************************************************** */
 // ============ 角度双环（普通角度模式：外环角度PID → 目标速度，内环速度PID → 扭矩） ============
 // yaw轴角度环外环PID
-ALG::PID::PID yaw_angle_pid(17.0f, 0.0f, 0.0f, 5000.0f, 1000.0f, 100.0f);
+ALG::PID::PID yaw_angle_pid(20.3f, 0.0f, 0.0f, 5000.0f, 1000.0f, 100.0f);
 // yaw轴角度环内环PID
-ALG::PID::PID yaw_angle_to_speed_pid(3.7f, 0.0f, 0.0f, 5000.0f, 1000.0f, 100.0f);
+ALG::PID::PID yaw_angle_to_speed_pid(4.6f, 0.0f, 0.0f, 5000.0f, 1000.0f, 100.0f);
 // pitch轴角度环外环PID
 ALG::PID::PID pitch_angle_pid(16.5f, 0.015f, 0.0f, 5000.0f, 1000.0f, 100.0f);
 // pitch轴角度环内环PID
@@ -86,12 +86,12 @@ Alg::Feedforward::GimbalFullCompensation yaw_angle_dynamics_ff(
     0.0f, 0.001f, 0.0f, 0.0f, 50.0f);
 // Pitch 角度模式前馈：仅保留惯量项，静摩擦由独立前馈处理。
 Alg::Feedforward::GimbalFullCompensation pitch_angle_dynamics_ff(
-    0.00f, 0.001f, 0.0f, 0.0f);
+    0.0f, 0.001f, 0.0f, 0.0f);
 Alg::Feedforward::Friction pitch_angle_friction_ff(
     0.0f, 15.0f);
 // pitch 重力补偿前馈（通用无状态：角度/视觉/速度模式共用）
 Alg::Feedforward::Gravity pitch_gravity_ff(
-    55.0f, 0.0f);
+    250.0f, 0.0f);
 // pitch 扰动观测补偿：保守起步，实车再调 b/gain/limit
 Alg::Feedforward::UDE pitch_ude(
     0.0f, 0.0f, 0.001f, 20.0f, 100.0f, 0.0f);
@@ -99,7 +99,7 @@ Alg::Feedforward::UDE pitch_ude(
 
 // ============ 速度单环（遥控器/键鼠直驱速度控制） ============
 //yaw轴遥控器单速度环PID（继承原 yaw_single_speed_pid 参数，遥控器手感不变）
-ALG::PID::PID yaw_remote_speed_pid(4.0f, 0.05f, 0.0f, 5000.0f, 1000.0f, 100.0f);
+ALG::PID::PID yaw_remote_speed_pid(4.3f, 0.05f, 0.0f, 5000.0f, 1000.0f, 100.0f);
 //pitch轴遥控器单速度环PID（继承原 pitch_single_speed_pid 参数，遥控器手感不变）
 ALG::PID::PID pitch_remote_speed_pid(4.0f, 0.04f, 0.0f, 5000.0f, 1000.0f, 100.0f);
 //yaw轴键鼠单速度环PID（初始参数同遥控器版，键鼠手感单独调参）
@@ -110,23 +110,25 @@ ALG::PID::PID pitch_keymouse_speed_pid(4.5f, 0.07f, 0.0f, 5000.0f, 1000.0f, 100.
 
 // ============ 视觉模式（独立 PID 与前馈状态，防止与普通角度模式共用微分历史） ============
 // yaw 视觉角度环外环PID
-ALG::PID::PID yaw_version_angle_pid(10.0f, 0.0f, 0.0f, 2000.0f, 1000.0f, 100.0f);
+ALG::PID::PID yaw_version_angle_pid(16.5f, 0.01f, 0.01f, 2000.0f, 1000.0f, 100.0f);
 // yaw 视觉角度环内环PID
-ALG::PID::PID yaw_version_speed_pid(2.8f, 0.0f, 0.0f, 5000.0f, 1000.0f, 100.0f);
+ALG::PID::PID yaw_version_speed_pid(1.54f, 0.0f, 0.0f, 5000.0f, 1000.0f, 100.0f);
 // pitch 视觉角度环外环PID（暂未启用，全零）
-ALG::PID::PID pitch_version_angle_pid(16.5f, 0.015f, 0.0f, 2000.0f, 1000.0f, 100.0f);
+ALG::PID::PID pitch_version_angle_pid(17.5f, 0.025f, 0.0f, 2000.0f, 1000.0f, 100.0f);
 // pitch 视觉角度环内环PID（暂未启用，全零）
-ALG::PID::PID pitch_version_speed_pid(4.7f, 0.01f, 0.0f, 5000.0f, 1000.0f, 100.0f);
+ALG::PID::PID pitch_version_speed_pid(4.0f, 0.01f, 0.0f, 5000.0f, 1000.0f, 100.0f);
 // 视觉模式前馈：控制周期 1 ms，输出量纲为 LK4005 扭矩命令。
 Alg::Feedforward::Velocity yaw_vision_velocity_ff(
     0.0f, 0.001f);
 Alg::Feedforward::Friction yaw_vision_friction_ff(
     0.0f, 0.0f);
 Alg::Feedforward::GimbalFullCompensation yaw_vision_dynamics_ff(
-    0.05f, 0.001f, 0.02f, 50.0f, 50.0f);
+    // Visual angle-loop target speed can change abruptly; tune inertia FF
+    // separately after the visual loop is stable.
+    0.01f, 0.001f, 0.025f, 50.0f, 50.0f);
 // Pitch 视觉模式使用独立前馈状态，参数与普通角度模式一致。
 Alg::Feedforward::GimbalFullCompensation pitch_vision_dynamics_ff(
-    0.0f, 0.001f, 0.0f, 0.0f);
+    0.01f, 0.001f, 0.0f, 0.0f);
 Alg::Feedforward::Friction pitch_vision_friction_ff(
     0.0f, 15.0f);
 // Yaw speed-mode full compensation FF, independent from angle/vision mode state.
@@ -231,6 +233,8 @@ float pitch_error = 0.0f;
 float yaw_control_output = 0.0f;
 float yaw_speed_pid_output = 0.0f;
 float yaw_speed_ff_output = 0.0f;
+float yaw_speed_ff_friction = 0.0f;
+float yaw_speed_ff_inertia = 0.0f;
 float pitch_control_output = 0.0f;
 float pitch_ude_output = 0.0f;
 float pitch_last_control_output = 0.0f;
@@ -572,6 +576,8 @@ while (pitch_error > 180.0f)  pitch_error -= 360.0f;
 while (pitch_error < -180.0f) pitch_error += 360.0f;
 yaw_speed_pid_output = 0.0f;
 yaw_speed_ff_output = 0.0f;
+yaw_speed_ff_friction = 0.0f;
+yaw_speed_ff_inertia = 0.0f;
 
 /********************************************************************************* */
 if (yaw_gimbal_fsm.Get_Control_Type() == GIMBAL_CONTROL_STOP )
@@ -595,12 +601,17 @@ else if (yaw_gimbal_fsm.Get_Control_Type() == GIMBAL_CONTROL_ANGLE && !imu_fault
         yaw_vision_dynamics_ff.MomentOfInertiaTuning(yaw_current_speed, yaw_target_speed);
         yaw_vision_friction_ff.FrictionFeedforward(yaw_target_speed);
         yaw_vision_velocity_ff.VelocityFeedforward(yaw_target_angle);
-        yaw_control_output = yaw_version_speed_pid.UpDate(
+        yaw_speed_pid_output = yaw_version_speed_pid.UpDate(
             yaw_target_speed,
             yaw_current_speed
-        ) + yaw_vision_dynamics_ff.getTorque()
-          + yaw_vision_friction_ff.getFeedforward()
-          + yaw_vision_velocity_ff.getFeedforward();
+        );
+        yaw_speed_ff_friction = yaw_vision_dynamics_ff.getFriction()
+                              + yaw_vision_friction_ff.getFeedforward();
+        yaw_speed_ff_inertia = yaw_vision_dynamics_ff.getAccFeedforward();
+        yaw_speed_ff_output = yaw_vision_dynamics_ff.getTorque()
+                            + yaw_speed_ff_friction
+                            + yaw_vision_velocity_ff.getFeedforward();
+        yaw_control_output = yaw_speed_pid_output + yaw_speed_ff_output;
     }
     else
     {
@@ -608,12 +619,17 @@ else if (yaw_gimbal_fsm.Get_Control_Type() == GIMBAL_CONTROL_ANGLE && !imu_fault
         yaw_angle_dynamics_ff.MomentOfInertiaTuning(yaw_current_speed, yaw_target_speed);
         yaw_angle_friction_ff.FrictionFeedforward(yaw_target_speed);
         yaw_angle_velocity_ff.VelocityFeedforward(yaw_target_angle);
-        yaw_control_output = yaw_angle_to_speed_pid.UpDate(
+        yaw_speed_pid_output = yaw_angle_to_speed_pid.UpDate(
             yaw_target_speed,
             yaw_current_speed
-        ) + yaw_angle_dynamics_ff.getTorque()
-          + yaw_angle_friction_ff.getFeedforward()
-          + yaw_angle_velocity_ff.getFeedforward();
+        );
+        yaw_speed_ff_friction = yaw_angle_dynamics_ff.getFriction()
+                              + yaw_angle_friction_ff.getFeedforward();
+        yaw_speed_ff_inertia = yaw_angle_dynamics_ff.getAccFeedforward();
+        yaw_speed_ff_output = yaw_angle_dynamics_ff.getTorque()
+                            + yaw_speed_ff_friction
+                            + yaw_angle_velocity_ff.getFeedforward();
+        yaw_control_output = yaw_speed_pid_output + yaw_speed_ff_output;
     }
 }
 else if (yaw_gimbal_fsm.Get_Control_Type() == GIMBAL_CONTROL_SPEED || imu_fault)
@@ -641,6 +657,8 @@ else if (yaw_gimbal_fsm.Get_Control_Type() == GIMBAL_CONTROL_SPEED || imu_fault)
     {
         yaw_speed_pid_output = yaw_remote_speed_pid.UpDate(yaw_target_speed, yaw_current_speed);
     }
+    yaw_speed_ff_friction = yaw_speed_dynamics_ff.getFriction();
+    yaw_speed_ff_inertia = yaw_speed_dynamics_ff.getAccFeedforward();
     yaw_speed_ff_output = yaw_speed_dynamics_ff.getTorque();
     yaw_control_output = yaw_speed_pid_output + yaw_speed_ff_output;
 
@@ -763,20 +781,28 @@ else
         
             if ((can2_tick % 10) == 0)
             {
-                // VOFA channels for yaw tuning.
-                float vofa_data[] = {
-                    yaw_target_speed,                              // ch1: yaw speed command
-                    yaw_current_speed,                             // ch2: yaw speed feedback
-                    yaw_target_speed - yaw_current_speed,          // ch3: yaw speed error
-                    yaw_speed_pid_output,                          // ch4: yaw speed PID output only
-                    yaw_speed_ff_output,                           // ch5: yaw speed full-compensation FF
-                    yaw_control_output,                            // ch6: yaw final torque command
-                    yaw_target_angle,                              // ch7: yaw angle command
-                    yaw_current_angle,                             // ch8: yaw angle feedback
-                    mg4005_state[1].velocity_rpm,                  // ch9: yaw motor velocity rpm
-                    mg4005_state[1].current_a                      // ch10: yaw motor current
-                };
-                vofa_sendN(vofa_data, static_cast<uint8_t>(sizeof(vofa_data) / sizeof(vofa_data[0]))); // send data to VOFA
+                vofa_send(
+                    yaw_target_angle,                              // ch1: pitch angle command
+                    yaw_current_angle,                             // ch2: pitch angle feedback
+                    pitch_target_angle,          // ch3: pitch angle error
+                    pitch_current_angle,                          // ch4: active pitch angle PID output
+                    yaw_target_speed,                           // ch5: active pitch total feedforward
+                    yaw_current_speed                             // ch6: pitch final torque command
+                );
+                // // VOFA channels for yaw tuning.
+                // float vofa_data[] = {
+                //     yaw_target_angle,                              // ch1: yaw angle command
+                //     yaw_current_angle,                             // ch2: yaw angle feedback
+                //     yaw_target_angle - yaw_current_angle,          // ch3: yaw angle error
+                //     yaw_angle_pid_output,                          // ch4: active yaw angle PID output
+                //     yaw_angle_ff_output,                           // ch5: active yaw total feedforward
+                //     yaw_angle_ff_friction,                         // ch6: active yaw friction feedforward
+                //     yaw_speed_ff_inertia,                          // ch7: active yaw inertia feedforward
+                //     yaw_control_output,                            // ch8: yaw final torque command
+                //     yaw_error,                                     // ch9: yaw angle error
+                //     mg4005_state[1].current_a                      // ch10: yaw motor current
+                // };
+                // vofa_sendN(vofa_data, static_cast<uint8_t>(sizeof(vofa_data) / sizeof(vofa_data[0]))); // send data to VOFA
             }
         
 

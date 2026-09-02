@@ -36,40 +36,40 @@ void Chassis_FSM::StateUpdate(uint8_t s1, uint8_t s2, bool equipment_online)
     {
         target_mode = CHASSIS_STOP;
     }
-    // s1上, s2上 -> 跟随
+    // s1上, s2上 -> 不跟随
     else if (s1 == 1 && s2 == 1)
     {
-        target_mode = CHASSIS_FOLLOW_GIMBAL;
+        target_mode = CHASSIS_NOT_FOLLOW;
     }
-    // s1上, s2中 -> 跟随
+    // s1上, s2中 -> 小陀螺
     else if (s1 == 1 && s2 == 3)
     {
-        target_mode = CHASSIS_FOLLOW_GIMBAL;
+        target_mode = CHASSIS_GYRO_SPIN;
     }
     // s1上, s2下 -> 跟随
     else if (s1 == 1 && s2 == 2)
     {
         target_mode = CHASSIS_FOLLOW_GIMBAL;
     }
-    // s1中, s2上 -> 不跟随
+    // s1中, s2上 -> 小陀螺
     else if (s1 == 3 && s2 == 1)
     {
-        target_mode = CHASSIS_NOT_FOLLOW;
+        target_mode = CHASSIS_GYRO_SPIN;
     }
     // s1中, s2中 -> 不跟随
     else if (s1 == 3 && s2 == 3)
     {
         target_mode = CHASSIS_NOT_FOLLOW;
     }
-    // s1中, s2下 -> 小陀螺
+    // s1中, s2下 -> 跟随
     else if (s1 == 3 && s2 == 2)
     {
-        target_mode = CHASSIS_GYRO_SPIN;
+        target_mode = CHASSIS_FOLLOW_GIMBAL;
     }
-    // s1下, s2上 -> 小陀螺
+    // s1下, s2上 -> 跟随
     else if (s1 == 2 && s2 == 1)
     {
-        target_mode = CHASSIS_GYRO_SPIN;
+        target_mode = CHASSIS_FOLLOW_GIMBAL;
     }
     // s1下, s2中 -> 跟随
     else if (s1 == 2 && s2 == 3)

@@ -139,7 +139,7 @@ static void DetermineFeederModeAndTrigger(const Struct_Feeder_Input &input,
     }
     else if (input.s1 == Remote::DOWN && input.s2 == Remote::MIDDLE)
     {
-        feeder_mode = FEEDER_MODE_SINGLE;
+        feeder_mode = FEEDER_MODE_STOP;
     }
     else if (input.s1 == Remote::DOWN && input.s2 == Remote::UP)
     {
@@ -151,15 +151,15 @@ static void DetermineFeederModeAndTrigger(const Struct_Feeder_Input &input,
     }
     else if (input.s1 == Remote::MIDDLE && input.s2 == Remote::MIDDLE)
     {
-        feeder_mode = FEEDER_MODE_SINGLE;
+        feeder_mode = FEEDER_MODE_STOP;
     }
     else if (input.s1 == Remote::MIDDLE && input.s2 == Remote::UP)
     {
-        feeder_mode = FEEDER_MODE_SINGLE;
+        feeder_mode = FEEDER_MODE_STOP;
     }
     else if (input.s1 == Remote::UP && input.s2 == Remote::DOWN)
     {
-        feeder_mode = FEEDER_MODE_STOP;
+        feeder_mode = FEEDER_MODE_SINGLE;
     }
     else if (input.s1 == Remote::UP && input.s2 == Remote::MIDDLE)
     {
@@ -167,7 +167,7 @@ static void DetermineFeederModeAndTrigger(const Struct_Feeder_Input &input,
     }
     else if (input.s1 == Remote::UP && input.s2 == Remote::UP)
     {
-        feeder_mode = FEEDER_MODE_CONTINUOUS;
+        feeder_mode = FEEDER_MODE_SINGLE;
     }
     else
     {

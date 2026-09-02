@@ -104,9 +104,11 @@ if (!remoteController.isConnected())
 else if (!is_keymouse)
 {
     // 遥控器模式下特定挡位 = 强制停止
-    if ((RemoteData.s1 == Remote::DOWN  && RemoteData.s2 == Remote::DOWN)  ||
-        (RemoteData.s1 == Remote::MIDDLE && RemoteData.s2 == Remote::DOWN) ||
-        (RemoteData.s1 == Remote::UP    && RemoteData.s2 == Remote::DOWN))
+    if ((RemoteData.s1 == Remote::DOWN   && RemoteData.s2 == Remote::DOWN)   ||
+        (RemoteData.s1 == Remote::DOWN   && RemoteData.s2 == Remote::MIDDLE) ||
+        (RemoteData.s1 == Remote::MIDDLE && RemoteData.s2 == Remote::DOWN)   ||
+        (RemoteData.s1 == Remote::MIDDLE && RemoteData.s2 == Remote::UP)     ||
+        (RemoteData.s1 == Remote::MIDDLE && RemoteData.s2 == Remote::MIDDLE))
     {
         force_stop = 1;
     }

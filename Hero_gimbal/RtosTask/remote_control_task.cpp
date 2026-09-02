@@ -222,9 +222,9 @@ extern "C" void remote_control_task(void *argument)
 
         if (imu.isConnected())
         {
-            // 视觉模式：遥控器 S1中+S2中，或键鼠右键按住 ≥2s
-            uint8_t vision_mode = ((remoteController.get_s1() == BSP::REMOTE_CONTROL::RemoteController::MIDDLE &&
-                                    remoteController.get_s2() == BSP::REMOTE_CONTROL::RemoteController::MIDDLE) ||
+            // 视觉模式：遥控器 S1上+S2上，或键鼠右键按住 ≥2s
+            uint8_t vision_mode = ((remoteController.get_s1() == BSP::REMOTE_CONTROL::RemoteController::UP &&
+                                    remoteController.get_s2() == BSP::REMOTE_CONTROL::RemoteController::UP) ||
                                    input_dispatcher.IsVisionMode()) ? 1 : 0;
 
             float quaternion[4] = {imu.GetQuaternion(0), imu.GetQuaternion(1), imu.GetQuaternion(2), imu.GetQuaternion(3)};
@@ -241,6 +241,6 @@ extern "C" void remote_control_task(void *argument)
         }
        
 
-        vTaskDelay(10);
+        vTaskDelay(2);
     }
 }

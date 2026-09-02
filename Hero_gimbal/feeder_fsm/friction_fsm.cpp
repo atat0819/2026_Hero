@@ -30,14 +30,35 @@ static uint8_t DetermineFrictionMode(const struct Struct_Friction_Input &input)
         return FRICTION_MODE_STOP;
 
     // 遥控器模式：除 S1↓+S2↓ / S1中+S2↓ / S1↑+S2↓ 外均为 ON
-    if (input.s1 == Remote::DOWN && input.s2 == Remote::DOWN)  return FRICTION_MODE_STOP;
-    if (input.s1 == Remote::MIDDLE && input.s2 == Remote::DOWN) return FRICTION_MODE_STOP;
-    if (input.s1 == Remote::UP && input.s2 == Remote::DOWN)    return FRICTION_MODE_STOP;
+    if (input.s1 == Remote::DOWN && input.s2 == Remote::DOWN)
+    {
+        return FRICTION_MODE_STOP;
+    }
+    else if (input.s1 == Remote::DOWN && input.s2 == Remote::MIDDLE)
+    {
+        return FRICTION_MODE_STOP;
+    }
+    else if (input.s1 == Remote::MIDDLE && input.s2 == Remote::DOWN)
+    {
+        return FRICTION_MODE_STOP;
+    }
+    else if (input.s1 == Remote::MIDDLE && input.s2 == Remote::MIDDLE)
+    {
+        return FRICTION_MODE_STOP;
+    }
 
-    // S1中+S2中（视觉模式）：摩擦轮停止
-    //if (input.s1 == Remote::MIDDLE && input.s2 == Remote::MIDDLE) return FRICTION_MODE_STOP;
+    else if (input.s1 == Remote::MIDDLE && input.s2 == Remote::UP)
+    {
+        return FRICTION_MODE_STOP;
+    }
+    else
+    {
+        return FRICTION_MODE_ON;
+    }
 
-    return FRICTION_MODE_STOP; // 默认 STOP，防止误启动
+    // 键鼠模式（S1中+S2中）由 R 键控制摩擦轮
+
+    return FRICTION_MODE_ON; // 默认 STOP，防止误启动
 }
 
 void Class_Friction_FSM::Update(const Struct_Friction_Input &input,

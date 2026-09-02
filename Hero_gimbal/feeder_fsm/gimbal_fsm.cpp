@@ -40,12 +40,8 @@ void Class_Gimbal_FSM::Init(const Struct_Gimbal_FSM_Config &__config,
 // ===== 模式判定：FSM 内部根据 s1/s2 和键鼠状态自行决定 =====
 uint8_t Class_Gimbal_FSM::DetermineMode(const Struct_Gimbal_Input &input) const
 {
-    // 非法拨杆值（上电未连接时为 0）→ 强制 STOP，防止云台误动
-    if (input.s1 < 1 || input.s1 > 3 || input.s2 < 1 || input.s2 > 3)
-        return GIMBAL_MODE_STOP;
-
-    // ---- 键鼠模式：s1↓ + s2↑ ----
-    if (input.s1 == Remote::DOWN && input.s2 == Remote::UP)
+    // ---- 键鼠模式：s1中 + s2中 ----
+    if (input.s1 == Remote::MIDDLE && input.s2 == Remote::MIDDLE)
     {
         if (input.vision_ready && input.vision_fresh && input.mouse_right_held)
         {
@@ -55,20 +51,36 @@ uint8_t Class_Gimbal_FSM::DetermineMode(const Struct_Gimbal_Input &input) const
     }
 
     // ---- 遥控器模式 ----
-    if (input.s1 == Remote::DOWN && input.s2 == Remote::DOWN)
+    else if (input.s1 == Remote::DOWN && input.s2 == Remote::DOWN)
     {
         return GIMBAL_MODE_STOP;
     }
-    if (input.s1 == Remote::DOWN && input.s2 == Remote::MIDDLE)
+    else if (input.s1 == Remote::DOWN && input.s2 == Remote::MIDDLE)
     {
         return GIMBAL_MODE_SPEED;
     }
-    if (input.s1 == Remote::MIDDLE && input.s2 == Remote::DOWN)
+    else if (input.s1 == Remote::MIDDLE && input.s2 == Remote::DOWN)
     {
         return GIMBAL_MODE_ANGLE;
     }
 
-    if (input.s1 == Remote::MIDDLE && input.s2 == Remote::MIDDLE)
+    else if (input.s1 == Remote::DOWN && input.s2 == Remote::UP)
+    {
+        return GIMBAL_MODE_SPEED;
+    }
+    else if (input.s1 == Remote::UP && input.s2 == Remote::DOWN)
+    {
+        return GIMBAL_MODE_ANGLE;
+    }
+    else if (input.s1 == Remote::MIDDLE && input.s2 == Remote::UP)
+    {
+        return GIMBAL_MODE_ANGLE;
+    }
+    else if (input.s1 == Remote::UP && input.s2 == Remote::MIDDLE)
+    {
+        return GIMBAL_MODE_ANGLE;
+    }
+    else if (input.s1 == Remote::UP && input.s2 == Remote::UP)
     {
         if (input.vision_ready && input.vision_fresh)
         {
@@ -76,7 +88,12 @@ uint8_t Class_Gimbal_FSM::DetermineMode(const Struct_Gimbal_Input &input) const
         }
         return GIMBAL_MODE_SPEED;
     }
-    return GIMBAL_MODE_ANGLE;
+    else
+    {
+        return GIMBAL_MODE_STOP;
+        // 非法拨杆值（上电未连接时为 0）→ 强制 STOP，防止云台误动
+        return GIMBAL_MODE_STOP;
+    }
 }
 
 void Class_Gimbal_FSM::Update(const Struct_Gimbal_Input &input, float current_angle)
@@ -95,7 +112,7 @@ void Class_Gimbal_FSM::Update(const Struct_Gimbal_Input &input, float current_an
     }
     else if (mode_command == GIMBAL_MODE_SPEED)
     {
-        bool is_keymouse = (input.s1 == Remote::DOWN && input.s2 == Remote::UP);
+        bool is_keymouse = (input.s1 == Remote::MIDDLE && input.s2 == Remote::MIDDLE);
         if (is_keymouse)
         {
             speed_input = input.mouse_speed;
@@ -168,7 +185,7 @@ void Class_Gimbal_FSM::Update(const Struct_Gimbal_Input &input, float current_an
         control_type = GIMBAL_CONTROL_SPEED;
         if (Absolute_Value(speed_input) > INPUT_DEADBAND)
         {
-            bool is_keymouse = (input.s1 == Remote::DOWN && input.s2 == Remote::UP);
+            bool is_keymouse = (input.s1 == Remote::MIDDLE && input.s2 == Remote::MIDDLE);
             target_speed = speed_input * (is_keymouse ? config.mouse_speed_scale : config.speed_scale);
         }
         else

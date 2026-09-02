@@ -11,7 +11,7 @@ void InputDispatcher::Update(uint8_t s1, uint8_t s2, uint16_t keyboard,
                              bool mouse_left, bool mouse_right)
 {
     // ---- 1. 判断输入源 ----
-    if (s1 == Remote::DOWN && s2 == Remote::UP) {
+    if (s1 == Remote::MIDDLE && s2 == Remote::MIDDLE) {
         source_ = InputSource::KeyMouse;
     } else {
         source_ = InputSource::Remote;
