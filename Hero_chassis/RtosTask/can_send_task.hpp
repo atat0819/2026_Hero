@@ -27,6 +27,11 @@ extern bool yaw_offset_updated;
 extern Gimbal_Chassis_communicate_t gimbalChassis_communicate;
 extern uint8_t gimbalChassisSpeedUpdated;
 
+// 云台发送的键盘位掩码，供底盘控制任务按位判断按键状态
+extern volatile uint16_t gimbal_keyboard;
+extern volatile uint32_t gimbal_keyboard_last_tick;
+extern volatile bool gimbal_keyboard_received;
+
 
 #ifdef __cplusplus
 }

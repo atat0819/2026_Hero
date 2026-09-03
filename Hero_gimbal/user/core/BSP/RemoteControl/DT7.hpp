@@ -134,6 +134,8 @@ namespace BSP::REMOTE_CONTROL
         inline int16_t get_mouseZ() const { return mouse_.z; }
         inline bool get_mouseLeft() const { return mouse_.left; }
         inline bool get_mouseRight() const { return mouse_.right; }
+        // 取出自上次调用以来累计的有符号鼠标位移
+        void ConsumeMouseDelta(int32_t &x, int32_t &y);
         // 开关数据
         inline uint8_t get_s1() const { return channels_.s1; } // S1开关
         inline uint8_t get_s2() const { return channels_.s2; } // S2开关
@@ -213,6 +215,8 @@ namespace BSP::REMOTE_CONTROL
         Channels channels_;			   // 通道数据
         Coordinates coordinates_;	   // 坐标数据
         Mouse mouse_;				   // 鼠标数据
+        volatile int32_t pending_mouse_x_ = 0;
+        volatile int32_t pending_mouse_y_ = 0;
         uint16_t keyboard_;			   // 键盘数据
         StickPosition stick_position_; // 摇杆位置（-1.0~1.0）
         BSP::WATCH_STATE::StateWatch statewatch_;

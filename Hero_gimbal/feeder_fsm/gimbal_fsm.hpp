@@ -33,6 +33,7 @@ typedef struct Struct_Gimbal_FSM_Config
     float angle_step = 0.0f;
     float speed_scale = 0.0f;          // 遥控器摇杆速度增益
     float mouse_speed_scale = 0.2f;    // 键鼠速度增益 (deg/s per pixel)
+    float mouse_angle_scale = 0.02f;   // 键鼠角度增益 (deg per pixel)
     float min_angle = 0.0f;
     float max_angle = 0.0f;
     uint8_t limit_angle = 0U;
@@ -45,8 +46,10 @@ typedef struct Struct_Gimbal_Input
 {
     uint8_t  s1;               // 遥控器 S1 (1=UP, 3=MIDDLE, 2=DOWN)
     uint8_t  s2;               // 遥控器 S2
+    bool     is_keymouse;      // 当前是否为键鼠模式
     float    joystick_speed;   // 遥控器摇杆值 (-1~1)
     float    mouse_speed;      // 键鼠速度：调用方预计算 (yaw: dx*GAIN, pitch: -dy*GAIN)
+    float    mouse_angle_delta;// 键鼠本周期有符号鼠标位移
     int16_t  mouse_dx;         // 鼠标 X 位移 (保留)
     int16_t  mouse_dy;         // 鼠标 Y 位移 (保留)
     bool     mouse_right_held; // 右键是否按住（消抖后，供 2s 视觉延时用）
@@ -99,6 +102,8 @@ private:
     uint8_t angle_target_initialized = 0U;
     uint8_t mode_changed_flag = 0U;
     uint8_t last_mode_command_ = GIMBAL_MODE_STOP;
+    uint8_t source_initialized_ = 0U;
+    bool last_is_keymouse_ = false;
 };
 
 #endif

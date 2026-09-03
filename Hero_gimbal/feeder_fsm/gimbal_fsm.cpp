@@ -4,6 +4,7 @@
 namespace
 {
 constexpr float INPUT_DEADBAND = 0.01f;
+constexpr float MOUSE_ANGLE_DEADBAND = 2.0f;
 constexpr float FULL_CIRCLE_DEG = 360.0f;
 
 float Absolute_Value(float value)
@@ -26,6 +27,8 @@ void Class_Gimbal_FSM::Init(const Struct_Gimbal_FSM_Config &__config,
     control_type = GIMBAL_CONTROL_STOP;
     angle_target_initialized = 0U;
     mode_changed_flag = 0U;
+    source_initialized_ = 0U;
+    last_is_keymouse_ = false;
 
     if (__initial_status == GIMBAL_STATUS_ANGLE)
     {
@@ -41,13 +44,13 @@ void Class_Gimbal_FSM::Init(const Struct_Gimbal_FSM_Config &__config,
 uint8_t Class_Gimbal_FSM::DetermineMode(const Struct_Gimbal_Input &input) const
 {
     // ---- 键鼠模式：s1中 + s2中 ----
-    if (input.s1 == Remote::MIDDLE && input.s2 == Remote::MIDDLE)
+    if (input.is_keymouse)
     {
         if (input.vision_ready && input.vision_fresh && input.mouse_right_held)
         {
             return GIMBAL_MODE_VISION;
         }
-        return GIMBAL_MODE_SPEED;
+        return GIMBAL_MODE_ANGLE;
     }
 
     // ---- 遥控器模式 ----
@@ -102,6 +105,11 @@ void Class_Gimbal_FSM::Update(const Struct_Gimbal_Input &input, float current_an
     uint8_t mode_command = DetermineMode(input);
     last_mode_command_ = mode_command;
 
+    const bool source_changed =
+        (source_initialized_ == 0U) || (input.is_keymouse != last_is_keymouse_);
+    source_initialized_ = 1U;
+    last_is_keymouse_ = input.is_keymouse;
+
     // 2. 计算 angle_input 和 speed_input
     float angle_input = input.joystick_speed;  // 遥控器默认用摇杆
     float speed_input = input.joystick_speed;
@@ -110,15 +118,7 @@ void Class_Gimbal_FSM::Update(const Struct_Gimbal_Input &input, float current_an
     {
         angle_input = input.vision_angle;
     }
-    else if (mode_command == GIMBAL_MODE_SPEED)
-    {
-        bool is_keymouse = (input.s1 == Remote::MIDDLE && input.s2 == Remote::MIDDLE);
-        if (is_keymouse)
-        {
-            speed_input = input.mouse_speed;
-        }
-        // 遥控器模式：speed_input 保持 joystick_speed
-    }
+    // 速度模式只由遥控器模式使用，键鼠模式在视觉失效时回到角度模式。
 
     // 3. 状态转移（与原 Update 完全一致）
     uint8_t next_status = GIMBAL_STATUS_STOP;
@@ -162,6 +162,27 @@ void Class_Gimbal_FSM::Update(const Struct_Gimbal_Input &input, float current_an
             break;
         }
     }
+    else if (source_changed)
+    {
+        // 输入源切换时，即使控制类型相同也重新锚定，防止继承旧目标
+        switch (next_status)
+        {
+        case GIMBAL_STATUS_ANGLE:
+            Enter_Angle_State(current_angle);
+            break;
+        case GIMBAL_STATUS_SPEED:
+            Enter_Speed_State();
+            break;
+        case GIMBAL_STATUS_VISION:
+            Enter_Vision_State(current_angle);
+            break;
+        case GIMBAL_STATUS_STOP:
+        default:
+            Enter_Stop_State();
+            break;
+        }
+        mode_changed_flag = 1U;
+    }
 
     switch (Get_Now_Status_Serial())
     {
@@ -172,7 +193,14 @@ void Class_Gimbal_FSM::Update(const Struct_Gimbal_Input &input, float current_an
             target_angle = Apply_Angle_Rule(current_angle);
             angle_target_initialized = 1U;
         }
-        if (Absolute_Value(angle_input) > INPUT_DEADBAND)
+        if (source_changed == false && input.is_keymouse &&
+            Absolute_Value(input.mouse_angle_delta) > MOUSE_ANGLE_DEADBAND)
+        {
+            target_angle += input.mouse_angle_delta * config.mouse_angle_scale;
+            target_angle = Apply_Angle_Rule(target_angle);
+        }
+        else if (source_changed == false && !input.is_keymouse &&
+                 Absolute_Value(angle_input) > INPUT_DEADBAND)
         {
             target_angle += angle_input * config.angle_step;
             target_angle = Apply_Angle_Rule(target_angle);
@@ -185,8 +213,7 @@ void Class_Gimbal_FSM::Update(const Struct_Gimbal_Input &input, float current_an
         control_type = GIMBAL_CONTROL_SPEED;
         if (Absolute_Value(speed_input) > INPUT_DEADBAND)
         {
-            bool is_keymouse = (input.s1 == Remote::MIDDLE && input.s2 == Remote::MIDDLE);
-            target_speed = speed_input * (is_keymouse ? config.mouse_speed_scale : config.speed_scale);
+            target_speed = speed_input * config.speed_scale;
         }
         else
         {

@@ -67,6 +67,9 @@ public:
      */
     float Get_wz_cmd(float yaw_offset_rad);
 
+    // 直接计算跟随 PID 输出，供键鼠模式的 Z 键调用
+    float Get_follow_wz_cmd(float yaw_offset_rad);
+
     /**
      * @brief 定时器回调，驱动内部计时
      */

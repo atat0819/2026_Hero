@@ -77,6 +77,13 @@ ALG::PID::PID yaw_angle_to_speed_pid(4.6f, 0.0f, 0.0f, 5000.0f, 1000.0f, 100.0f)
 ALG::PID::PID pitch_angle_pid(16.5f, 0.015f, 0.0f, 5000.0f, 1000.0f, 100.0f);
 // pitch轴角度环内环PID
 ALG::PID::PID pitch_angle_to_speed_pid(4.7f, 0.01f, 0.0f, 5000.0f, 1000.0f, 100.0f);
+
+
+// 键鼠角度环 PID：独立于遥控器角度环，初始参数与遥控器角度环一致
+ALG::PID::PID yaw_keymouse_angle_pid(18.0f, 0.0f, 0.0f, 5000.0f, 1000.0f, 100.0f);
+ALG::PID::PID yaw_keymouse_angle_to_speed_pid(4.0f, 0.0f, 0.0f, 5000.0f, 1000.0f, 100.0f);
+ALG::PID::PID pitch_keymouse_angle_pid(20.4f, 0.0f, 0.0f, 5000.0f, 1000.0f, 100.0f);
+ALG::PID::PID pitch_keymouse_angle_to_speed_pid(4.6f, 0.0f, 0.0f, 5000.0f, 1000.0f, 100.0f);
 // 角度模式前馈：控制周期 1 ms，输出量纲为 LK4005 扭矩命令。
 Alg::Feedforward::Velocity yaw_angle_velocity_ff(
     0.0f, 0.001f);
@@ -253,6 +260,7 @@ extern "C" void can_send_task(void *argument)
 yaw_gimbal_fsm_config.angle_step = 0.20f;
 yaw_gimbal_fsm_config.speed_scale = 110.0f;
 yaw_gimbal_fsm_config.mouse_speed_scale = 0.2f;   // 键鼠 yaw 手感 (°/s per pixel)
+yaw_gimbal_fsm_config.mouse_angle_scale = 0.017f;  // 键鼠 yaw 角度增益 (° per pixel)
 yaw_gimbal_fsm_config.min_angle = 0.0f;
 yaw_gimbal_fsm_config.max_angle = 0.0f;
 yaw_gimbal_fsm_config.limit_angle = 0U;
@@ -263,6 +271,7 @@ yaw_gimbal_fsm.Init(yaw_gimbal_fsm_config, GIMBAL_STATUS_STOP);
 pitch_gimbal_fsm_config.angle_step = 0.14f;
 pitch_gimbal_fsm_config.speed_scale = 95.0f;
 pitch_gimbal_fsm_config.mouse_speed_scale = 0.2f;   // 键鼠 pitch 手感 (°/s per pixel)
+pitch_gimbal_fsm_config.mouse_angle_scale = 0.013f;  // 键鼠 pitch 角度增益 (° per pixel)
 pitch_gimbal_fsm_config.min_angle = -11.75f;   // IMU pitch 最低点
 pitch_gimbal_fsm_config.max_angle = 22.8f;    // IMU pitch 最高点
 pitch_gimbal_fsm_config.limit_angle = 1U;
@@ -377,6 +386,10 @@ pitch_target_angle = ImuData_user.pitch;
 
     for(;;)
     {
+         int32_t mouse_delta_x = 0;
+         int32_t mouse_delta_y = 0;
+         remoteController.ConsumeMouseDelta(mouse_delta_x, mouse_delta_y);
+
          if(!remoteController.isConnected() ||   // 遥控器失联
             (remoteController.get_left_y() == -1 // 或摇杆数据全-1（解析异常，数据不可信）
          && remoteController.get_left_x() == -1
@@ -392,8 +405,12 @@ pitch_target_angle = ImuData_user.pitch;
 
             yaw_angle_pid.reset();
             yaw_angle_to_speed_pid.reset();
+            yaw_keymouse_angle_pid.reset();
+            yaw_keymouse_angle_to_speed_pid.reset();
             pitch_angle_pid.reset();
             pitch_angle_to_speed_pid.reset();
+            pitch_keymouse_angle_pid.reset();
+            pitch_keymouse_angle_to_speed_pid.reset();
             yaw_version_angle_pid.reset();
             yaw_version_speed_pid.reset();
             pitch_version_angle_pid.reset();
@@ -434,6 +451,12 @@ pitch_target_angle = ImuData_user.pitch;
             RemoteData.mouse_right != 0
         );
 
+        if (input_dispatcher.GetSource() != InputSource::KeyMouse)
+        {
+            mouse_delta_x = 0;
+            mouse_delta_y = 0;
+        }
+
 ImuData_user.yaw = GetContinuousYawAngle(imu.GetAngle(2)); // continuous yaw feedback
 ImuData_user.pitch = imu.GetAngle(1); // pitch 角度，视觉模式闭环用
 ImuData_user.gyro_y = imu.GetGyro(0); // pitch 角速度，视觉模式闭环用
@@ -444,7 +467,6 @@ ImuData_user.gyro_z = imu.GetGyro(2); // 使用原始陀螺仪数据进行滤波
 /******************************************************************** */
 // 1. 核心控制指令：直接脱离 switch-case，每 1ms 循环必发！
 // 这样底盘能接收到最高频、最实时的坐标方向
-CAN2_SendChassisSpeed(RemoteData.chassis_vx, RemoteData.chassis_vy);
 YawOffset_SendToCan2(); 
 
 // 2. 其他辅助数据：使用 switch-case 分频发送，避免 CAN 总线拥堵
@@ -452,7 +474,7 @@ switch (can2_tick % 10)
 {
     case 0:
         // 云台 IMU 数据改成 10ms 发送一次（对底盘来说足够了）
-        CAN2_SendGimbalIMU_Raw(ImuData_user.yaw, ImuData_user.gyro_z);
+        //CAN2_SendGimbalIMU_Raw(ImuData_user.yaw, ImuData_user.gyro_z);
         break;
 
     case 5:
@@ -463,12 +485,17 @@ switch (can2_tick % 10)
             last_s1 = RemoteData.s1;
             last_s2 = RemoteData.s2;
         }
-        // [新增] 键鼠模式下每 10ms 发送键盘位掩码给底盘
-        if (input_dispatcher.GetSource() == InputSource::KeyMouse)
-        {
-            CAN2_SendKeyboard(input_dispatcher.GetKeyboardMask());
-        }
         break;
+}
+
+// 键鼠模式下按控制周期发送键盘位掩码给底盘
+if (input_dispatcher.GetSource() == InputSource::KeyMouse)
+{
+    CAN2_SendKeyboard(input_dispatcher.GetKeyboardMask());
+}
+else if (input_dispatcher.GetSource() == InputSource::Remote)
+{
+    CAN2_SendChassisSpeed(RemoteData.chassis_vx, RemoteData.chassis_vy);
 }
 
 // 3. 兜底保护：每 20ms 强行同步一次开关状态，防止漏帧
@@ -506,8 +533,10 @@ else
     Struct_Gimbal_Input yaw_input = {};
     yaw_input.s1       = RemoteData.s1;
     yaw_input.s2       = RemoteData.s2;
+    yaw_input.is_keymouse = (input_dispatcher.GetSource() == InputSource::KeyMouse);
     yaw_input.joystick_speed = RemoteData.gimbal_yaw;
-    yaw_input.mouse_speed = static_cast<float>(RemoteData.mouse_x);
+    yaw_input.mouse_speed = -static_cast<float>(RemoteData.mouse_x);
+    yaw_input.mouse_angle_delta = -static_cast<float>(mouse_delta_x);
     yaw_input.mouse_dx = RemoteData.mouse_x;
     yaw_input.mouse_dy = RemoteData.mouse_y;
     yaw_input.mouse_right_held = input_dispatcher.IsVisionMode();
@@ -519,8 +548,10 @@ else
     Struct_Gimbal_Input pitch_input = {};
     pitch_input.s1       = RemoteData.s1;
     pitch_input.s2       = RemoteData.s2;
+    pitch_input.is_keymouse = (input_dispatcher.GetSource() == InputSource::KeyMouse);
     pitch_input.joystick_speed = RemoteData.gimbal_pitch;
-    pitch_input.mouse_speed = -static_cast<float>(RemoteData.mouse_y);
+    pitch_input.mouse_speed = static_cast<float>(RemoteData.mouse_y);
+    pitch_input.mouse_angle_delta = static_cast<float>(mouse_delta_y);
     pitch_input.mouse_dx = RemoteData.mouse_x;
     pitch_input.mouse_dy = RemoteData.mouse_y;
     pitch_input.mouse_right_held = input_dispatcher.IsVisionMode();
@@ -539,6 +570,8 @@ if (yaw_gimbal_fsm.Take_Mode_Changed_Flag() != 0U)
 {
     yaw_angle_pid.reset();
     yaw_angle_to_speed_pid.reset();
+    yaw_keymouse_angle_pid.reset();
+    yaw_keymouse_angle_to_speed_pid.reset();
     yaw_keymouse_speed_pid.reset();
     yaw_remote_speed_pid.reset();
     yaw_version_angle_pid.reset();
@@ -555,6 +588,8 @@ if (pitch_gimbal_fsm.Take_Mode_Changed_Flag() != 0U)
 {
     pitch_angle_pid.reset();
     pitch_angle_to_speed_pid.reset();
+    pitch_keymouse_angle_pid.reset();
+    pitch_keymouse_angle_to_speed_pid.reset();
     pitch_keymouse_speed_pid.reset();
     pitch_remote_speed_pid.reset();
     pitch_version_angle_pid.reset();
@@ -586,6 +621,8 @@ if (yaw_gimbal_fsm.Get_Control_Type() == GIMBAL_CONTROL_STOP )
     yaw_control_output = 0.0f;
     yaw_angle_pid.reset();
     yaw_angle_to_speed_pid.reset();
+    yaw_keymouse_angle_pid.reset();
+    yaw_keymouse_angle_to_speed_pid.reset();
     yaw_keymouse_speed_pid.reset();
     yaw_remote_speed_pid.reset();
     yaw_version_angle_pid.reset();
@@ -615,14 +652,16 @@ else if (yaw_gimbal_fsm.Get_Control_Type() == GIMBAL_CONTROL_ANGLE && !imu_fault
     }
     else
     {
-        yaw_target_speed = yaw_angle_pid.UpDate(yaw_error, 0.0f);
+        const bool is_keymouse = (input_dispatcher.GetSource() == InputSource::KeyMouse);
+        yaw_target_speed = is_keymouse
+            ? yaw_keymouse_angle_pid.UpDate(yaw_error, 0.0f)
+            : yaw_angle_pid.UpDate(yaw_error, 0.0f);
         yaw_angle_dynamics_ff.MomentOfInertiaTuning(yaw_current_speed, yaw_target_speed);
         yaw_angle_friction_ff.FrictionFeedforward(yaw_target_speed);
         yaw_angle_velocity_ff.VelocityFeedforward(yaw_target_angle);
-        yaw_speed_pid_output = yaw_angle_to_speed_pid.UpDate(
-            yaw_target_speed,
-            yaw_current_speed
-        );
+        yaw_speed_pid_output = is_keymouse
+            ? yaw_keymouse_angle_to_speed_pid.UpDate(yaw_target_speed, yaw_current_speed)
+            : yaw_angle_to_speed_pid.UpDate(yaw_target_speed, yaw_current_speed);
         yaw_speed_ff_friction = yaw_angle_dynamics_ff.getFriction()
                               + yaw_angle_friction_ff.getFeedforward();
         yaw_speed_ff_inertia = yaw_angle_dynamics_ff.getAccFeedforward();
@@ -667,6 +706,8 @@ else if (yaw_gimbal_fsm.Get_Control_Type() == GIMBAL_CONTROL_SPEED || imu_fault)
     {
         yaw_angle_pid.reset();
         yaw_angle_to_speed_pid.reset();
+        yaw_keymouse_angle_pid.reset();
+        yaw_keymouse_angle_to_speed_pid.reset();
         yaw_version_angle_pid.reset();
         yaw_version_speed_pid.reset();
     }
@@ -678,6 +719,8 @@ if (pitch_gimbal_fsm.Get_Control_Type() == GIMBAL_CONTROL_STOP)
     pitch_control_output = 0.0f;
     pitch_angle_pid.reset();
     pitch_angle_to_speed_pid.reset();
+    pitch_keymouse_angle_pid.reset();
+    pitch_keymouse_angle_to_speed_pid.reset();
     pitch_keymouse_speed_pid.reset();
     pitch_remote_speed_pid.reset();
     pitch_version_angle_pid.reset();
@@ -703,14 +746,17 @@ else if (pitch_gimbal_fsm.Get_Control_Type() == GIMBAL_CONTROL_ANGLE && !imu_fau
     }
     else
     {
-        pitch_target_speed = pitch_angle_pid.UpDate(pitch_error, 0.0f);
+        const bool is_keymouse = (input_dispatcher.GetSource() == InputSource::KeyMouse);
+        pitch_target_speed = is_keymouse
+            ? pitch_keymouse_angle_pid.UpDate(pitch_error, 0.0f)
+            : pitch_angle_pid.UpDate(pitch_error, 0.0f);
         pitch_angle_dynamics_ff.MomentOfInertiaTuning(pitch_current_speed, pitch_target_speed);
         pitch_angle_friction_ff.FrictionFeedforward(pitch_target_speed);
         pitch_gravity_ff.GravityFeedforward(pitch_current_angle);
-        pitch_control_output = pitch_angle_to_speed_pid.UpDate(
-            pitch_target_speed,
-            pitch_current_speed
-        ) + pitch_angle_dynamics_ff.getTorque()
+        pitch_control_output = is_keymouse
+            ? pitch_keymouse_angle_to_speed_pid.UpDate(pitch_target_speed, pitch_current_speed)
+            : pitch_angle_to_speed_pid.UpDate(pitch_target_speed, pitch_current_speed);
+        pitch_control_output += pitch_angle_dynamics_ff.getTorque()
           + pitch_angle_friction_ff.getFeedforward()
           + pitch_gravity_ff.getFeedforward();
     }
@@ -749,6 +795,8 @@ else if (pitch_gimbal_fsm.Get_Control_Type() == GIMBAL_CONTROL_SPEED || imu_faul
     {
         pitch_angle_pid.reset();
         pitch_angle_to_speed_pid.reset();
+        pitch_keymouse_angle_pid.reset();
+        pitch_keymouse_angle_to_speed_pid.reset();
         pitch_version_angle_pid.reset();
         pitch_version_speed_pid.reset();
     }
@@ -782,12 +830,12 @@ else
             if ((can2_tick % 10) == 0)
             {
                 vofa_send(
-                    yaw_target_angle,                              // ch1: pitch angle command
-                    yaw_current_angle,                             // ch2: pitch angle feedback
-                    pitch_target_angle,          // ch3: pitch angle error
-                    pitch_current_angle,                          // ch4: active pitch angle PID output
-                    yaw_target_speed,                           // ch5: active pitch total feedforward
-                    yaw_current_speed                             // ch6: pitch final torque command
+                    yaw_target_angle,       // ch1: pitch target angle
+                    yaw_current_angle,      // ch2: pitch feedback angle
+                    yaw_target_speed,              // ch3: pitch angle error
+                    yaw_current_speed,       // ch4: pitch target speed
+                    pitch_current_speed,      // ch5: pitch feedback speed
+                    pitch_control_output      // ch6: final pitch torque command
                 );
                 // // VOFA channels for yaw tuning.
                 // float vofa_data[] = {
@@ -953,12 +1001,16 @@ static bool IMU_Fault_Protection(float &yaw_angle, float &yaw_speed,
 
         yaw_angle_pid.reset();
         yaw_angle_to_speed_pid.reset();
+        yaw_keymouse_angle_pid.reset();
+        yaw_keymouse_angle_to_speed_pid.reset();
         yaw_keymouse_speed_pid.reset();
         yaw_remote_speed_pid.reset();
         yaw_version_angle_pid.reset();
         yaw_version_speed_pid.reset();
         pitch_angle_pid.reset();
         pitch_angle_to_speed_pid.reset();
+        pitch_keymouse_angle_pid.reset();
+        pitch_keymouse_angle_to_speed_pid.reset();
         pitch_keymouse_speed_pid.reset();
         pitch_remote_speed_pid.reset();
         pitch_version_angle_pid.reset();

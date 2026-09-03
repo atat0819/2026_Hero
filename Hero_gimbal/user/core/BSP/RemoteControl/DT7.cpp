@@ -1,5 +1,6 @@
 #include "DT7.hpp"
 #include <cstdlib>
+#include "stm32f4xx.h"
 
 namespace BSP::REMOTE_CONTROL
 {
@@ -73,8 +74,28 @@ void RemoteController::parseData(const uint8_t *data)
     mouse_.left = extractBool(data[12]);
     mouse_.right = extractBool(data[13]);
 
+    // 鼠标 X/Y 是每帧有符号位移，按收到的 DT7 帧累计
+    pending_mouse_x_ += static_cast<int32_t>(mouse_.x);
+    pending_mouse_y_ += static_cast<int32_t>(mouse_.y);
+
     // 键盘（16位）
     keyboard_ = extract16Bits(data[14], data[15]);
+}
+
+void RemoteController::ConsumeMouseDelta(int32_t &x, int32_t &y)
+{
+    const uint32_t primask = __get_PRIMASK();
+    __disable_irq();
+
+    x = pending_mouse_x_;
+    y = pending_mouse_y_;
+    pending_mouse_x_ = 0;
+    pending_mouse_y_ = 0;
+
+    if (primask == 0U)
+    {
+        __enable_irq();
+    }
 }
 
 // ============================================================================================================

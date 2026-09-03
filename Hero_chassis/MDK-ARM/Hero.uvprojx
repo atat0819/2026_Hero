@@ -1014,6 +1014,11 @@
               <FileType>8</FileType>
               <FilePath>..\RtosTask\remote_task.cpp</FilePath>
             </File>
+            <File>
+              <FileName>chassis_keyboard_fsm.cpp</FileName>
+              <FileType>8</FileType>
+              <FilePath>..\fsm\chassis_keyboard_fsm.cpp</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

@@ -23,6 +23,7 @@
 #include "../communication/gimbal_refree.hpp"
 #include "../user/core/APP/Referee/RM_RefereeSystem.h"
 #include "../user/core/Alg/UtilityFunction/SlopePlanning.hpp"
+#include "../fsm/chassis_keyboard_fsm.hpp"
 
 #define Gain 4.7
 
@@ -43,6 +44,13 @@ static uint32_t yaw_offset_timeout_cnt = 0; // 超时计数器
 Gimbal_Chassis_communicate_t gimbalChassis_communicate;
 
 uint8_t gimbalChassisSpeedUpdated = 0;
+
+// 云台 CAN2 -> 底盘的键盘位掩码
+volatile uint16_t gimbal_keyboard = 0;
+volatile uint32_t gimbal_keyboard_last_tick = 0;
+volatile bool gimbal_keyboard_received = false;
+
+ChassisKeyboardFSM keyboard_fsm;
 
 // 超级电容通信实例
 Communication::SuperCapacitor supercap(500); // 500ms 超时阈值
@@ -67,7 +75,7 @@ Communication::GimbalRefree gimbal_refree;
 // vx/vy 斜坡规划 (防功率尖峰/麦轮打滑), 反馈同步用 FK 实测底盘速度; w 方向不规划, 保持转向响应
 // 斜率单位: 每控制周期增量, 1kHz 循环下 0.008 ≈ 8 m/s² 加速度
 Alg::Utility::SlopePlanning ramp_vx(0.006f, 0.0054f);
-Alg::Utility::SlopePlanning ramp_vy(0.006f, 0.0054f);
+Alg::Utility::SlopePlanning ramp_vy(0.0045f, 0.0037f);
 
 
 // 模板参数 <N> 表示电机数量
@@ -272,9 +280,16 @@ extern "C" void can_send_task(void *argument)
        memcpy(&gimbalChassis_communicate.vy, &frame.data[4], sizeof(float));
        gimbalChassisSpeedUpdated = 1;
    }
-   else if (frame.id == 0x303 ) {
+    else if (frame.id == 0x303 ) {
        gimbalChassis_communicate.s1 = frame.data[0];
        gimbalChassis_communicate.s2 = frame.data[1];
+   }
+   else if (frame.id == 0x305 && frame.dlc == sizeof(gimbal_keyboard)) {
+       uint16_t keyboard_value = 0;
+       memcpy(&keyboard_value, frame.data, sizeof(keyboard_value));
+       gimbal_keyboard = keyboard_value;
+       gimbal_keyboard_last_tick = HAL_GetTick();
+       gimbal_keyboard_received = true;
    }
     else if (frame.id == 0x777) {
        supercap.parse(frame); // 超级电容数据
@@ -292,6 +307,7 @@ extern "C" void can_send_task(void *argument)
 
     // 初始化底盘状态机
     chassis_fsm.Init();
+    keyboard_fsm.Init();
 memset(&gimbalChassis_communicate, 0, sizeof(gimbalChassis_communicate));
 
 for (int i = 0; i < 4; i++)
@@ -308,6 +324,29 @@ Enum_Chassis_Mode last_mode = CHASSIS_STOP; //为了不疯车
 osDelay(500);
     for (;;)
     {
+         const uint32_t now_tick = HAL_GetTick();
+         const bool keyboard_mode =
+             (gimbalChassis_communicate.s1 == 3) &&
+             (gimbalChassis_communicate.s2 == 3);
+         const bool keyboard_online =
+             gimbal_keyboard_received &&
+             (now_tick - gimbal_keyboard_last_tick < 100U);
+
+         if (!keyboard_mode)
+         {
+             // Keyboard frames are only sent in keyboard mode. Do not reuse
+             // a previous mode's frame after returning to double-middle.
+             gimbal_keyboard_received = false;
+         }
+
+         keyboard_fsm.Update(
+             gimbal_keyboard,
+             keyboard_mode,
+             keyboard_online,
+             now_tick);
+         const KeyboardMotionCommand& keyboard_cmd =
+             keyboard_fsm.GetCommand();
+
          //获取底盘旋转速度
          ChassisData.vx = remoteController.get_left_y()*Gain;
          ChassisData.vy = remoteController.get_left_x()*Gain;
@@ -328,7 +367,7 @@ osDelay(500);
 
          // 超级电容在线状态更新
          supercap.updateOnlineStatus();
-         if(remoteController.get_left_y() == -1 
+         if(!keyboard_mode && remoteController.get_left_y() == -1
          && remoteController.get_left_x() == -1 
          && remoteController.get_right_x() == -1)
          {
@@ -342,7 +381,9 @@ osDelay(500);
   ChassisMotorSendCANChecked();
   continue; // 跳过本次循环，直接进入下一次循环
     }
-    else if (gimbalChassis_communicate.vx == -1 && gimbalChassis_communicate.vy == -1)
+    else if (!keyboard_mode &&
+             gimbalChassis_communicate.vx == -1 &&
+             gimbalChassis_communicate.vy == -1)
     {
         for (int i = 0; i < 4; i++) 
         {
@@ -418,19 +459,42 @@ osDelay(500);
            chassis_fsm.StateUpdate(
                (uint8_t)gimbalChassis_communicate.s1,
                (uint8_t)gimbalChassis_communicate.s2,
-               yaw_offset_updated);
+               keyboard_mode ? keyboard_online : yaw_offset_updated);
            wz_cmd = chassis_fsm.Get_wz_cmd(yaw_offset_rad);
+
+           if (keyboard_cmd.valid && keyboard_cmd.gyro_enabled)
+           {
+               wz_cmd = chassis_fsm.gyro_spin_speed;
+           }
+           else if (keyboard_cmd.valid && keyboard_cmd.follow_enabled)
+           {
+               wz_cmd = chassis_fsm.Get_follow_wz_cmd(yaw_offset_rad);
+           }
+           else if (keyboard_cmd.valid)
+           {
+               wz_cmd = 0.0f;
+           }
 
         // 2. 获取电机当前反馈 (当前轮速)
         phase_comp = 0.0f; // 这里暂时不使用相位补偿，后续可以根据实际情况调整
-if (chassis_fsm.Get_Mode() == CHASSIS_GYRO_SPIN)
+if (chassis_fsm.Get_Mode() == CHASSIS_GYRO_SPIN ||
+    (keyboard_cmd.valid &&
+     (keyboard_cmd.gyro_enabled || keyboard_cmd.follow_enabled)))
 {
     phase_comp = (-0.007f * wz_cmd);  // 逆时针转为正，顺时针转为负
 }
             // --- A. 运动学逆解算：底盘速度 -> 4个轮子的目标转速 ---
             // 直接解算遥控器给出的目标值
-            vx_gimbal = gimbalChassis_communicate.vx * Gain;
-            vy_gimbal = gimbalChassis_communicate.vy * Gain;
+            if (keyboard_cmd.valid)
+            {
+                vx_gimbal = keyboard_cmd.vx * Gain;
+                vy_gimbal = keyboard_cmd.vy * Gain;
+            }
+            else
+            {
+                vx_gimbal = gimbalChassis_communicate.vx * Gain;
+                vy_gimbal = gimbalChassis_communicate.vy * Gain;
+            }
 float compensated_angle = yaw_offset_rad + phase_comp;
 vx_body = vx_gimbal * cosf(compensated_angle) + vy_gimbal * sinf(compensated_angle);
 vy_body = -vx_gimbal * sinf(compensated_angle) + vy_gimbal * cosf(compensated_angle);
@@ -522,7 +586,7 @@ osDelay(1);
 	        poverty_out,        // 贫困环输出
 	        ref_limit,          // 裁判系统功率上限
 	        current_energy,     // 当前能量 (策略层可能伪造)
-	        false,              // isShift (暂未映射)
+             keyboard_cmd.valid && keyboard_cmd.shift_pressed,
 	        false               // isPower (充电模式暂未实现)
 	    );
 	    float PowerMax = energy_ring.GetPowerMax();

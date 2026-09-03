@@ -132,9 +132,23 @@ float Chassis_FSM::Get_wz_cmd(float yaw_offset_rad)
     switch (current_mode)
     {
     case CHASSIS_FOLLOW_GIMBAL:
-    {
+        return Get_follow_wz_cmd(yaw_offset_rad);
 
-        // 归一化到 [-π, π]
+    case CHASSIS_GYRO_SPIN:
+        return gyro_spin_speed;
+
+    case CHASSIS_STOP:
+        return 0.0f;
+    case CHASSIS_NOT_FOLLOW:
+        return 0.0f;
+    default:
+        return 0.0f;
+    }
+}
+
+float Chassis_FSM::Get_follow_wz_cmd(float yaw_offset_rad)
+{
+    // 归一化到 [-π, π]
         while (yaw_offset_rad >  3.14159265f) 
 				{
 					yaw_offset_rad -= 2 * 3.14159265f;
@@ -171,18 +185,7 @@ float Chassis_FSM::Get_wz_cmd(float yaw_offset_rad)
 				output = -max_follow_speed;
 				}
 
-        return output;
-    }
-    case CHASSIS_GYRO_SPIN:
-        return gyro_spin_speed;
-
-    case CHASSIS_STOP:
-        return 0.0f;
-    case CHASSIS_NOT_FOLLOW:
-        return 0.0f;
-    default:
-        return 0.0f;
-    }
+    return output;
 }
 
 void Chassis_FSM::TIM_Calculate_PeriodElapsedCallback()
